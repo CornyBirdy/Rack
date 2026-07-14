@@ -1,0 +1,8 @@
+# machine-specific state — never push these
+apps.json
+start-hidden.vbs
+Rack.lnk
+
+# misc
+*.log
+node_modules/

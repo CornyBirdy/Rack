@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rack</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- ======================= sidebar ======================= -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">◈</span>
+        <h1>Rack</h1>
+        <button id="btn-settings" class="icon-btn" title="Controller settings">⚙</button>
+        <div id="settings-menu" class="settings-menu" hidden>
+          <div class="settings-title">Controller</div>
+          <button id="btn-theme" class="menu-item">◐ <span>Theme</span></button>
+          <button id="btn-boot" class="menu-item">⏻ <span>Run on boot: off</span></button>
+        </div>
+      </div>
+      <nav id="app-list" class="app-list"></nav>
+      <button id="add-app-btn" class="add-app-btn">+ Add app</button>
+    </aside>
+
+    <!-- ======================= main ======================= -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <h2 id="sel-name">No app selected</h2>
+          <span id="sel-status" class="status-pill stopped">stopped</span>
+        </div>
+        <div class="topbar-right">
+          <button id="btn-run" class="btn btn-run" disabled>▶ Run</button>
+          <button id="btn-kill" class="btn btn-kill" disabled>✕ Kill</button>
+          <button id="btn-update" class="btn btn-ghost" title="Fetch a new version of this app" hidden>⟳ Update</button>
+          <button id="btn-edit" class="btn btn-ghost" title="Rename / edit this app" disabled>✎ Edit</button>
+        </div>
+      </header>
+
+      <div id="empty-hint" class="empty-hint">
+        <p>Add an app with <strong>+ Add app</strong> and point each process at a folder, an
+        <strong>.exe</strong>, a <strong>.bat</strong>, or type a command like <code>npm run start</code>.
+        PocketBase apps are detected automatically. If a folder has a
+        <strong>rack.json</strong>, all its processes import in one click.</p>
+      </div>
+
+      <div id="panel" class="panel" hidden>
+        <!-- conflict banner -->
+        <div id="conflict-banner" class="banner" hidden></div>
+
+        <!-- status row -->
+        <section class="status-row">
+          <div class="stat">
+            <span class="stat-label">Status</span>
+            <span id="stat-status" class="stat-value">stopped</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Uptime</span>
+            <span id="stat-uptime" class="stat-value">—</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Consoles</span>
+            <span id="stat-consoles" class="stat-value">0 / 0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Ports</span>
+            <span id="stat-ports" class="stat-value">—</span>
+          </div>
+        </section>
+
+        <div class="panel-body">
+          <!-- details -->
+          <section class="details card">
+            <h3>Details</h3>
+            <div id="det-commands" class="det-commands"></div>
+            <button id="btn-delete" class="btn btn-danger-ghost">Remove app</button>
+          </section>
+
+          <!-- terminals -->
+          <section class="terminals">
+            <div class="terminals-head">
+              <span class="terminals-title">Terminals · <b id="term-running">0</b> running</span>
+              <label class="term-show">
+                Show
+                <select id="term-visible">
+                  <option value="1">1</option>
+                  <option value="2" selected>2</option>
+                  <option value="3">3</option>
+                  <option value="99">All</option>
+                </select>
+                at once
+              </label>
+            </div>
+            <div id="term-container" class="term-container"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ======================= app editor modal (add + edit) ======================= -->
+  <div id="modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3 id="modal-title">Add app</h3>
+      <div class="modal-row2">
+        <label>
+          App name <span class="muted">(optional)</span>
+          <input id="inp-name" type="text" placeholder="My cool app" />
+        </label>
+        <label>
+          Category <span class="muted">(optional)</span>
+          <input id="inp-category" type="text" list="cat-list" placeholder="e.g. Work, Personal" />
+          <datalist id="cat-list"></datalist>
+        </label>
+      </div>
+      <label class="checkbox-row">
+        <input id="inp-autostart" type="checkbox" />
+        <span>Start automatically when the controller launches (e.g. on boot)</span>
+      </label>
+      <label>
+        Update command <span class="muted">(optional — shows a ⟳ Update button, e.g. git pull)</span>
+        <input id="inp-update" type="text" placeholder="git pull" />
+      </label>
+
+      <div class="proc-head">
+        <span>Processes <span class="muted">— each gets its own console</span></span>
+      </div>
+      <div id="proc-rows" class="proc-rows"></div>
+      <button id="add-proc" class="btn btn-ghost btn-sm">+ Add another process</button>
+
+      <p id="modal-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="modal-save" class="btn btn-run">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= update modal ======================= -->
+  <div id="update-modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3 id="update-title">Update</h3>
+      <p class="muted" id="update-sub">Running the update command…</p>
+      <pre id="update-log" class="term"></pre>
+      <div class="modal-actions">
+        <button id="update-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- template for one process row -->
+  <template id="proc-tpl">
+    <div class="proc-row">
+      <div class="proc-row-top">
+        <input class="proc-name" type="text" placeholder="Console name (e.g. PocketBase)" />
+        <button class="proc-remove btn btn-danger-ghost btn-sm" title="Remove this process">✕</button>
+      </div>
+      <input class="proc-path" type="text" placeholder="Folder, .exe, .bat — or a command like: npm run start" />
+      <div class="proc-row-grid">
+        <input class="proc-args" type="text" placeholder="Arguments (optional)" />
+        <input class="proc-port" type="text" placeholder="Port (optional)" />
+      </div>
+      <input class="proc-dir" type="text" placeholder="Working folder (optional — needed for typed commands)" />
+      <input class="proc-stop" type="text" placeholder="Stop command (optional — e.g. docker compose down)" />
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

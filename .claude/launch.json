@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "controller",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js", "--no-open"],
+      "port": 7799
+    },
+    {
+      "name": "controller-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js", "--no-open", "--port=7801"],
+      "port": 7801
+    }
+  ]
+}
