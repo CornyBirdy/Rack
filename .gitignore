@@ -1,6 +1,7 @@
 # machine-specific state — never push these
 apps.json
 start-hidden.vbs
+.rack-restore.json
 Rack.lnk
 
 # misc

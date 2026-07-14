@@ -61,6 +61,41 @@ $("btn-boot").onclick = async () => {
 };
 loadBoot();
 
+/* ------------------------------------------------------------- version / self-update */
+
+async function loadVersion() {
+  try {
+    const { version, supervised } = await fetch("/api/version").then((r) => r.json());
+    const v = document.querySelector(".settings-version");
+    if (v) v.textContent = `Rack v${version}`;
+    // one-click update only works under the start.bat supervisor loop
+    $("btn-update-rack").hidden = !supervised;
+  } catch {}
+}
+loadVersion();
+
+function pollBackAndReload() {
+  const timer = setInterval(async () => {
+    try {
+      const r = await fetch("/api/version", { cache: "no-store" });
+      if (r.ok) { clearInterval(timer); location.reload(); }
+    } catch {}
+  }, 1000);
+}
+
+$("btn-update-rack").onclick = async () => {
+  $("settings-menu").hidden = true;
+  $("update-title").textContent = "Update Rack";
+  $("update-sub").textContent = "Checking for updates…";
+  $("update-log").innerHTML = "";
+  $("update-modal").hidden = false;
+  const res = await api("/api/self-update", { method: "POST" });
+  if (res.error) {
+    appendLine($("update-log"), "err", "[update] " + res.error);
+    $("update-sub").textContent = "Update unavailable.";
+  }
+};
+
 /* ------------------------------------------------------------- api */
 
 async function api(path, opts) {
@@ -570,6 +605,17 @@ function connectEvents() {
     } else if (ev.type === "update-done" && ev.id === selectedId) {
       $("update-sub").textContent =
         ev.code === 0 ? "✓ Update finished — press Run." : `Update exited with code ${ev.code}.`;
+    } else if (ev.type === "self-update-log") {
+      appendLine($("update-log"), ev.stream, ev.line);
+    } else if (ev.type === "self-update-done") {
+      $("update-sub").textContent = !ev.ok
+        ? "Update failed — see log."
+        : ev.changed === false
+        ? "✓ You're already on the latest version."
+        : "Updated.";
+    } else if (ev.type === "self-update-restart") {
+      $("update-sub").textContent = "New version pulled — restarting Rack…";
+      pollBackAndReload();
     }
   };
   es.onerror = () => {

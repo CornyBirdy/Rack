@@ -7,13 +7,20 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { spawn, exec } = require("child_process");
+const { spawn, exec, execSync } = require("child_process");
+
+const VERSION = "0.2";
+// True when launched by the start.bat supervisor loop, which can relaunch us on
+// exit code 42 — that's what makes one-click "Update Rack" able to restart.
+const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
+const RESTART_EXIT_CODE = 42;
 
 const portArg = process.argv.find((a) => a.startsWith("--port="));
 const CONTROL_PORT = portArg ? Number(portArg.split("=")[1]) : 7799;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const APPS_FILE = path.join(ROOT, "apps.json");
+const RESTORE_FILE = path.join(ROOT, ".rack-restore.json");
 const MAX_LOG_LINES = 600;
 const BASE_APP_PORT = 8090;
 
@@ -376,6 +383,47 @@ function updateApp(app) {
   return { ok: true };
 }
 
+// Update Rack itself: `git pull` in ROOT, and if new code arrived, restart via
+// the supervisor (exit 42). Running apps are remembered and brought back after.
+let selfUpdating = false;
+function gitHead() {
+  try { return execSync("git rev-parse HEAD", { cwd: ROOT }).toString().trim(); } catch { return ""; }
+}
+function selfUpdate() {
+  if (!SUPERVISED) return { ok: false, error: "Launch Rack via start.bat to enable one-click update." };
+  if (selfUpdating) return { ok: false, error: "An update is already running." };
+  selfUpdating = true;
+  const emit = (stream, line) => broadcast({ type: "self-update-log", stream, line });
+  const before = gitHead();
+  emit("out", "[update] git pull");
+  const proc = spawn("git pull", { cwd: ROOT, windowsHide: true, shell: true });
+  const pump = (s) => (d) => d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => emit(s, l));
+  proc.stdout.on("data", pump("out"));
+  proc.stderr.on("data", pump("err"));
+  proc.on("error", (e) => { selfUpdating = false; emit("err", "[update] " + e.message); broadcast({ type: "self-update-done", ok: false }); });
+  proc.on("exit", (code) => {
+    if (code !== 0) {
+      selfUpdating = false;
+      emit("err", `[update] git pull failed (code ${code}).`);
+      return broadcast({ type: "self-update-done", ok: false });
+    }
+    if (before && before === gitHead()) {
+      selfUpdating = false;
+      emit("out", "[update] Already up to date.");
+      return broadcast({ type: "self-update-done", ok: true, changed: false });
+    }
+    emit("out", "[update] Updated — restarting Rack...");
+    try {
+      const runningIds = apps.filter((a) => slotsFor(a).some((s) => s.proc)).map((a) => a.id);
+      fs.writeFileSync(RESTORE_FILE, JSON.stringify(runningIds));
+    } catch {}
+    for (const a of apps) stopApp(a); // avoid orphaned children across the restart
+    broadcast({ type: "self-update-restart" });
+    setTimeout(() => process.exit(RESTART_EXIT_CODE), 1000);
+  });
+  return { ok: true };
+}
+
 /* ------------------------------------------------------ add / edit an app */
 
 // Resolve one process spec { name, path, args, dir, port } into a stored command.
@@ -660,6 +708,17 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, slots.map((s) => ({ log: s.log, errCount: s.errCount })));
     }
 
+    // GET /api/version  → version + whether one-click self-update is available
+    if (parts[1] === "version" && req.method === "GET") {
+      return sendJSON(res, 200, { version: VERSION, supervised: SUPERVISED });
+    }
+
+    // POST /api/self-update  — git pull Rack itself and restart if changed
+    if (parts[1] === "self-update" && req.method === "POST") {
+      const r = selfUpdate();
+      return sendJSON(res, r.ok ? 200 : 400, r);
+    }
+
     // GET /api/boot  → is "run on boot" installed?   POST /api/boot {enable}
     if (parts[1] === "boot" && req.method === "GET") {
       return sendJSON(res, 200, { enabled: fs.existsSync(startupShortcutPath()) });
@@ -743,6 +802,20 @@ server.listen(CONTROL_PORT, () => {
       startApp(app);
     }
   }
+  // After a self-update restart, bring back whatever was running before.
+  try {
+    if (fs.existsSync(RESTORE_FILE)) {
+      const ids = JSON.parse(fs.readFileSync(RESTORE_FILE, "utf8"));
+      fs.unlinkSync(RESTORE_FILE);
+      for (const id of ids) {
+        const app = apps.find((a) => a.id === id);
+        if (app && !app.autostart) {
+          console.log(`Restoring ${app.name} after update...`);
+          startApp(app);
+        }
+      }
+    }
+  } catch {}
 });
 
 /* ------------------------------------------------- clean shutdown of children */
