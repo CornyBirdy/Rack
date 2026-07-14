@@ -133,6 +133,14 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 .menu-item:hover { background: var(--accent-soft); }
 .menu-item.on { color: var(--green); }
+.settings-version {
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  text-align: center;
+  padding: 6px 8px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
 .logo { color: var(--accent); font-size: 1.3rem; }
 
 .app-list {
