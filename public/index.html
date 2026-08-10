@@ -19,7 +19,7 @@
           <button id="btn-theme" class="menu-item">◐ <span>Theme</span></button>
           <button id="btn-boot" class="menu-item">⏻ <span>Run on boot: off</span></button>
           <button id="btn-update-rack" class="menu-item" hidden>⟳ <span>Update Rack</span></button>
-          <div class="settings-version">Rack v0.3</div>
+          <button id="btn-version" class="settings-version" title="View changelog">Rack v0.3</button>
         </div>
       </div>
       <nav id="app-list" class="app-list"></nav>
@@ -148,6 +148,17 @@
       <pre id="update-log" class="term"></pre>
       <div class="modal-actions">
         <button id="update-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= changelog modal ======================= -->
+  <div id="changelog-modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3 id="changelog-title">Changelog</h3>
+      <div id="changelog-body" class="changelog-body"></div>
+      <div class="modal-actions">
+        <button id="changelog-close" class="btn btn-ghost">Close</button>
       </div>
     </div>
   </div>

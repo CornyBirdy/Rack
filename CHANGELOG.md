@@ -1,0 +1,32 @@
+# Changelog
+
+## v0.3
+- **Tailscale Funnel** — each process that serves a port gets a Funnel dropdown
+  (443 / 8443 / 10000), a **Public URL** link, and a green `● public` marker.
+- Ports already funnelled by another process show as *in use* and can't be
+  double-booked; switching ports turns the old funnel off first.
+- Tailscale state is read live, so funnels set outside Rack also show up.
+- Added this changelog — click the version in the ⚙ menu.
+
+## v0.2
+- Renamed the app to **Rack** (manifest is now `rack.json`, env vars `RACK_*`;
+  the old `multiapp.json` and `MAC_*` names still work).
+- **One-click "Update Rack"** — pulls the new version and restarts itself via a
+  supervisor loop in `start.bat`, then brings your running apps back.
+- **⚙ settings menu** in the sidebar — Theme and Run-on-boot moved here so
+  controller-wide settings aren't confused with per-app buttons.
+- Version indicator in the settings menu.
+- Per-app **⟳ Update** button that runs the app's own update command (`git pull`).
+
+## v0.1
+- Run several **processes per app**, each with its own live console — nothing
+  opens in a stray window.
+- Run / Kill, live stdout + stderr, per-console Clear and a `⚠` error badge with
+  an errors-only view.
+- **`rack.json` manifest** — point Rack at a folder and every process imports in
+  one click, with ports injected as environment variables at runtime.
+- PocketBase auto-detection with automatic free-port assignment; conflict
+  warnings for ports hardcoded inside a `.bat`.
+- Collapsible sidebar **categories**, per-app **auto-start**, and **run on boot**.
+- **Stop commands** for graceful teardown (e.g. `docker compose down`).
+- Dark / light mode.

@@ -134,12 +134,46 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .menu-item:hover { background: var(--accent-soft); }
 .menu-item.on { color: var(--green); }
 .settings-version {
+  display: block;
+  width: 100%;
   font-size: 0.72rem;
+  font-family: inherit;
   color: var(--fg-muted);
   text-align: center;
-  padding: 6px 8px 2px;
+  padding: 7px 8px 3px;
   margin-top: 4px;
+  border: none;
   border-top: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+}
+.settings-version:hover { color: var(--accent); text-decoration: underline; }
+
+/* changelog */
+.changelog-body {
+  max-height: 58vh;
+  overflow-y: auto;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  padding-right: 6px;
+}
+.changelog-body h4 {
+  margin: 16px 0 6px;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+.changelog-body h4:first-child { margin-top: 0; }
+.changelog-body h5 { margin: 12px 0 4px; font-size: 0.85rem; color: var(--fg-muted); }
+.changelog-body ul { margin: 0; padding-left: 20px; }
+.changelog-body li { margin-bottom: 5px; }
+.changelog-body p { margin: 6px 0; }
+.changelog-body code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: Consolas, monospace;
+  font-size: 0.85em;
 }
 .logo { color: var(--accent); font-size: 1.3rem; }
 

@@ -719,6 +719,15 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, await funnelState());
     }
 
+    // GET /api/changelog  → raw CHANGELOG.md text
+    if (parts[1] === "changelog" && req.method === "GET") {
+      let text = "";
+      try {
+        text = fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8");
+      } catch {}
+      return sendJSON(res, 200, { text });
+    }
+
     // GET /api/version  → version + whether one-click self-update is available
     if (parts[1] === "version" && req.method === "GET") {
       return sendJSON(res, 200, { version: VERSION, supervised: SUPERVISED });
