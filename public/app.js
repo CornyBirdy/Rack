@@ -247,6 +247,91 @@ function renderConflictBanner() {
       .join("; ");
 }
 
+/* ------------------------------------------------------------- tailscale funnel */
+
+let funnelInfo = { available: false, active: [] };
+
+async function loadFunnel() {
+  try {
+    funnelInfo = await fetch("/api/funnel").then((r) => r.json());
+  } catch {
+    funnelInfo = { available: false, active: [] };
+  }
+}
+
+// Which public port (if any) is currently funnelling this process's local port.
+function funnelFor(localPort) {
+  return funnelInfo.active.find((a) => a.isFunnel && a.localPort === localPort) || null;
+}
+
+function renderFunnelRow(row, cmd) {
+  if (!row) return;
+  // Only meaningful for a process that actually serves a port.
+  if (!funnelInfo.available || !cmd.effPort) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+  row.innerHTML = "";
+
+  const mine = funnelFor(cmd.effPort);
+  const label = document.createElement("span");
+  label.className = "funnel-label";
+  label.textContent = "Funnel";
+  row.appendChild(label);
+
+  const sel = document.createElement("select");
+  sel.className = "funnel-select";
+  const off = new Option("Off", "");
+  sel.appendChild(off);
+  for (const p of funnelInfo.ports) {
+    // A public port already used by a *different* local port isn't selectable.
+    const taken = funnelInfo.active.find((a) => a.publicPort === p && a.localPort !== cmd.effPort);
+    const o = new Option(taken ? `${p} — in use` : String(p), String(p));
+    if (taken) o.disabled = true;
+    sel.appendChild(o);
+  }
+  sel.value = mine ? String(mine.publicPort) : "";
+  sel.onchange = async () => {
+    const next = sel.value;
+    sel.disabled = true;
+    // Turn off the old mapping first so switching ports doesn't leave a stray one.
+    if (mine && String(mine.publicPort) !== next) {
+      await api("/api/funnel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicPort: mine.publicPort, enable: false }),
+      });
+    }
+    let res = { ok: true };
+    if (next) {
+      res = await api("/api/funnel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicPort: Number(next), localPort: cmd.effPort, enable: true }),
+      });
+    }
+    if (res && res.error) alert("Funnel: " + res.error);
+    await loadFunnel();
+    renderPanel();
+  };
+  row.appendChild(sel);
+
+  if (mine) {
+    const a = document.createElement("a");
+    a.className = "btn btn-link funnel-url";
+    a.target = "_blank";
+    a.href = mine.url;
+    a.textContent = "Public URL ↗";
+    a.title = mine.url;
+    row.appendChild(a);
+    const warn = document.createElement("span");
+    warn.className = "funnel-live";
+    warn.textContent = "● public";
+    row.appendChild(warn);
+  }
+}
+
 function linksFor(cmd) {
   if (!cmd.effPort) return [];
   const base = `http://127.0.0.1:${cmd.effPort}`;
@@ -290,7 +375,8 @@ function renderDetails(app) {
         <dt>Folder</dt><dd class="c-dir"></dd>
         <dt>Port</dt><dd class="c-port"></dd>
       </dl>
-      <div class="det-links"></div>`;
+      <div class="det-links"></div>
+      <div class="funnel-row" hidden></div>`;
     el.querySelector(".name").textContent = cmd.name;
     el.querySelector(".c-exe").textContent = cmdLine;
     el.querySelector(".c-args").textContent = argStr;
@@ -306,6 +392,7 @@ function renderDetails(app) {
       a.textContent = `${label} ↗`;
       links.appendChild(a);
     }
+    renderFunnelRow(el.querySelector(".funnel-row"), cmd);
     wrap.appendChild(el);
   }
 }
@@ -613,6 +700,8 @@ function connectEvents() {
         : ev.changed === false
         ? "✓ You're already on the latest version."
         : "Updated.";
+    } else if (ev.type === "funnel") {
+      loadFunnel().then(renderPanel);
     } else if (ev.type === "self-update-restart") {
       $("update-sub").textContent = "New version pulled — restarting Rack…";
       pollBackAndReload();
@@ -626,5 +715,5 @@ function connectEvents() {
 
 /* ------------------------------------------------------------- init */
 
-refreshApps().then(loadLogs);
+loadFunnel().then(() => refreshApps()).then(loadLogs);
 connectEvents();

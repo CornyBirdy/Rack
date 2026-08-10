@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execSync } = require("child_process");
 
-const VERSION = "0.2";
+const VERSION = "0.3";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -708,6 +708,17 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, slots.map((s) => ({ log: s.log, errCount: s.errCount })));
     }
 
+    // GET /api/funnel  → live Tailscale funnel state   POST /api/funnel {publicPort, localPort, enable}
+    if (parts[1] === "funnel" && req.method === "GET") {
+      return sendJSON(res, 200, await funnelState());
+    }
+    if (parts[1] === "funnel" && req.method === "POST") {
+      const r = await setFunnel(await readBody(req));
+      if (!r.ok) return sendJSON(res, 400, r);
+      broadcast({ type: "funnel" });
+      return sendJSON(res, 200, await funnelState());
+    }
+
     // GET /api/version  → version + whether one-click self-update is available
     if (parts[1] === "version" && req.method === "GET") {
       return sendJSON(res, 200, { version: VERSION, supervised: SUPERVISED });
@@ -753,6 +764,107 @@ const server = http.createServer(async (req, res) => {
     res.end(data);
   });
 });
+
+/* ------------------------------------------------------- tailscale funnel */
+
+// Funnel can only listen publicly on these three ports (Tailscale limitation).
+const FUNNEL_PORTS = [443, 8443, 10000];
+
+let TS_BIN;
+function ts() {
+  if (TS_BIN !== undefined) return TS_BIN;
+  const candidates =
+    process.platform === "win32"
+      ? ["tailscale", "C:\\Program Files\\Tailscale\\tailscale.exe"]
+      : [
+          "tailscale",
+          "/usr/bin/tailscale",
+          "/usr/local/bin/tailscale",
+          "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+        ];
+  TS_BIN = null;
+  for (const c of candidates) {
+    try {
+      execSync(`"${c}" version`, { stdio: "ignore", timeout: 5000 });
+      TS_BIN = c;
+      break;
+    } catch {}
+  }
+  return TS_BIN;
+}
+
+function tsExec(args) {
+  return new Promise((resolve) => {
+    const bin = ts();
+    if (!bin) return resolve({ ok: false, out: "", err: "Tailscale not found" });
+    exec(`"${bin}" ${args}`, { timeout: 20000 }, (err, stdout, stderr) =>
+      resolve({
+        ok: !err,
+        out: (stdout || "").trim(),
+        err: (stderr || "").trim() || (err ? err.message : ""),
+      })
+    );
+  });
+}
+
+function publicUrl(dnsName, pub, p) {
+  const base = pub === 443 ? `https://${dnsName}` : `https://${dnsName}:${pub}`;
+  return base + (p && p !== "/" ? p : "/");
+}
+
+// Live state straight from Tailscale — it owns the serve/funnel config, not us.
+async function funnelState() {
+  if (!ts()) return { available: false, reason: "Tailscale isn't installed on this machine." };
+
+  const st = await tsExec("status --json");
+  let dnsName = "";
+  try {
+    const j = JSON.parse(st.out);
+    dnsName = ((j.Self && j.Self.DNSName) || "").replace(/\.$/, "");
+  } catch {}
+  if (!dnsName)
+    return { available: false, reason: "Tailscale is installed but not logged in yet." };
+
+  const sc = await tsExec("funnel status --json");
+  let cfg = null;
+  try {
+    cfg = JSON.parse(sc.out);
+  } catch {}
+
+  const active = [];
+  if (cfg && cfg.Web) {
+    for (const [hostPort, web] of Object.entries(cfg.Web)) {
+      const pub = Number(hostPort.split(":").pop());
+      const isFunnel = !!(cfg.AllowFunnel && cfg.AllowFunnel[hostPort]);
+      for (const [p, h] of Object.entries(web.Handlers || {})) {
+        const m = /:(\d+)\s*$/.exec(h.Proxy || "");
+        active.push({
+          publicPort: pub,
+          path: p,
+          localPort: m ? Number(m[1]) : null,
+          isFunnel, // false = tailnet-only `serve`, true = public `funnel`
+          url: publicUrl(dnsName, pub, p),
+        });
+      }
+    }
+  }
+  return { available: true, dnsName, ports: FUNNEL_PORTS, active };
+}
+
+async function setFunnel({ publicPort, localPort, enable }) {
+  const pub = Number(publicPort);
+  if (!FUNNEL_PORTS.includes(pub))
+    return { ok: false, error: `Funnel only allows public ports ${FUNNEL_PORTS.join(", ")}.` };
+  if (enable) {
+    if (!localPort) return { ok: false, error: "That process has no port to expose." };
+    const r = await tsExec(`funnel --bg --https=${pub} localhost:${localPort}`);
+    if (!r.ok) return { ok: false, error: r.err || "Failed to enable funnel." };
+  } else {
+    const r = await tsExec(`funnel --https=${pub} off`);
+    if (!r.ok) return { ok: false, error: r.err || "Failed to turn the funnel off." };
+  }
+  return { ok: true };
+}
 
 /* --------------------------------------------------------- run on boot (win) */
 

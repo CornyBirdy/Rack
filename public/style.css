@@ -429,6 +429,37 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 .det-cmd dd { margin: 0; word-break: break-all; }
 .det-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+
+/* tailscale funnel control */
+.funnel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+.funnel-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+.funnel-select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 0.8rem;
+}
+.funnel-url { padding: 4px 9px !important; font-size: 0.78rem !important; }
+.funnel-live {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--green);
+}
 .det-links .btn-link { padding: 5px 10px; font-size: 0.8rem; }
 .btn-danger-ghost { margin-top: 14px; }
 

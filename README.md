@@ -82,6 +82,23 @@ Update** button appears. Click it to fetch a new version and watch the output
 stream live, then press Run. Because machine-specific state (`.env`, databases,
 build output) is git-ignored, an update only changes code — your data stays put.
 
+## Tailscale Funnel (public access)
+
+If Tailscale is installed and logged in on the machine running Rack, each process
+that serves a port gets a **Funnel** dropdown in its details card. Pick a public
+port and Rack runs the Tailscale command for you, then shows a **Public URL**
+link and a green **● public** marker.
+
+Funnel only allows three public ports — **443, 8443, and 10000** — so you can
+expose **up to three processes at once** (this is a Tailscale limit, not a plan
+limit; Funnel is available on all plans including the free one). A port already
+used by another process shows as *in use* and can't be picked twice. Switching a
+process to a different public port turns the old one off first, so you never
+leave a stray funnel behind.
+
+> Anything you funnel is reachable from the **public internet** — only turn it on
+> for services you intend to share.
+
 ## Docker (and other graceful stops)
 
 Add a process with command `docker compose up` and a **Stop command** of
