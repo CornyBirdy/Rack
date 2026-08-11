@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4
+- **Copy SDK prompt** — grab a ready-made prompt for your AI coding tool that
+  makes a new project Rack-ready. In the ⚙ menu, and linked from **+ Add app**.
+- Falls back to a selectable text box when the clipboard isn't reachable (which
+  happens when Rack is opened over plain `http` on a LAN or Tailscale address).
+- The prompt lives in `SDK-PROMPT.md`, so you can edit it without touching code.
+
 ## v0.3
 - **Tailscale Funnel** — each process that serves a port gets a Funnel dropdown
   (443 / 8443 / 10000), a **Public URL** link, and a green `● public` marker.

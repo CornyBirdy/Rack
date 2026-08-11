@@ -18,8 +18,9 @@
           <div class="settings-title">Controller</div>
           <button id="btn-theme" class="menu-item">◐ <span>Theme</span></button>
           <button id="btn-boot" class="menu-item">⏻ <span>Run on boot: off</span></button>
+          <button id="btn-sdk" class="menu-item">⧉ <span>Copy SDK prompt</span></button>
           <button id="btn-update-rack" class="menu-item" hidden>⟳ <span>Update Rack</span></button>
-          <button id="btn-version" class="settings-version" title="View changelog">Rack v0.3</button>
+          <button id="btn-version" class="settings-version" title="View changelog">Rack v0.4</button>
         </div>
       </div>
       <nav id="app-list" class="app-list"></nav>
@@ -106,6 +107,10 @@
   <div id="modal" class="modal-backdrop" hidden>
     <div class="modal modal-wide">
       <h3 id="modal-title">Add app</h3>
+      <p class="sdk-hint">
+        Building a new app? <button type="button" id="btn-sdk-2" class="linkish">Copy the SDK prompt</button>
+        and paste it into your AI coding tool — it makes the app Rack-ready.
+      </p>
       <div class="modal-row2">
         <label>
           App name <span class="muted">(optional)</span>
@@ -148,6 +153,19 @@
       <pre id="update-log" class="term"></pre>
       <div class="modal-actions">
         <button id="update-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= sdk prompt modal (clipboard fallback) ======================= -->
+  <div id="sdk-modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3>SDK prompt</h3>
+      <p class="muted" id="sdk-sub">Paste this into your AI coding tool.</p>
+      <textarea id="sdk-text" class="sdk-text" readonly></textarea>
+      <div class="modal-actions">
+        <button id="sdk-copy" class="btn btn-run">Copy</button>
+        <button id="sdk-close" class="btn btn-ghost">Close</button>
       </div>
     </div>
   </div>

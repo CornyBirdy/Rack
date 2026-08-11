@@ -57,6 +57,16 @@ setup hint — no manual typing. Rack also injects each process's port as an
 environment variable at runtime, so ports stay declared in one place. See
 **RACK-SDK.md** for the format.
 
+## Copy SDK prompt
+
+Building a new app you want Rack to run? Open **⚙ → Copy SDK prompt** (also
+linked from **+ Add app**) and paste it into your AI coding tool. It tells the
+model exactly how to make the project Rack-ready: foreground launcher scripts,
+ports read from environment variables, and a `rack.json` manifest — so afterwards
+you just point Rack at the folder.
+
+The prompt lives in `SDK-PROMPT.md`, so you can tweak it without touching code.
+
 ## Categories
 
 Give an app a **Category** (in the editor) and the sidebar groups apps under

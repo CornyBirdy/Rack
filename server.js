@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execSync } = require("child_process");
 
-const VERSION = "0.3";
+const VERSION = "0.4";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -717,6 +717,15 @@ const server = http.createServer(async (req, res) => {
       if (!r.ok) return sendJSON(res, 400, r);
       broadcast({ type: "funnel" });
       return sendJSON(res, 200, await funnelState());
+    }
+
+    // GET /api/sdk-prompt  → the copy-paste prompt for AI coding tools
+    if (parts[1] === "sdk-prompt" && req.method === "GET") {
+      let text = "";
+      try {
+        text = fs.readFileSync(path.join(ROOT, "SDK-PROMPT.md"), "utf8");
+      } catch {}
+      return sendJSON(res, 200, { text });
     }
 
     // GET /api/changelog  → raw CHANGELOG.md text
