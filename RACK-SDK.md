@@ -14,6 +14,7 @@ with the right names, ports, and links. No manual per-process typing.
   "autostart": false,
   "setup": "setup.bat",
   "update": "git pull",
+  "rebuild": "rebuild.bat",
   "processes": [
     {
       "name": "PocketBase",
@@ -64,6 +65,7 @@ A Docker app looks like this — one process, using `stop` for a graceful teardo
 | `category` | app | Optional sidebar group (collapsible, Discord-style). |
 | `autostart` | app | `true` = start this app when Rack launches (e.g. on boot). |
 | `update` | app | Optional shell command (e.g. `git pull`) shown as a **⟳ Update** button; runs in the first process's folder and streams its output. Use it to pull new code before Run. |
+| `rebuild` | app | Build command run straight after `update` (see below). Leave it out and Rack runs a `rebuild.bat` in the app folder if there is one; `false` turns that off. |
 | `setup` | app | A one-time command (string) shown as a hint. Run it by hand once and after code changes — it is **not** launched as a process. |
 | `processes[]` | app | One entry per long-running server; each gets its own console. |
 | `name` | process | Console label. |
@@ -75,6 +77,30 @@ A Docker app looks like this — one process, using `stop` for a graceful teardo
 | `managed` | process | `true` = Rack may move this port to avoid clashes; `false` = fixed (declared, warn-only). Defaults: PocketBase → managed, everything else → fixed. |
 | `stop` | process | Optional shell command run on **Stop** for a graceful teardown (e.g. `docker compose down`). Rack runs it, then kills the process. |
 | `links[]` | process | Buttons in the details panel: `{ "label", "path" }` → `http://127.0.0.1:<port><path>`. |
+
+## Update → rebuild
+
+⟳ Update runs up to two steps in the app's folder, streaming both into one log:
+
+1. the `update` command (e.g. `git pull`);
+2. the **rebuild** — your `rebuild` command, or `rebuild.bat` / `rebuild.cmd` /
+   `rebuild.sh` if one sits in the app folder.
+
+If step 1 fails, step 2 is skipped. A rebuild can't overwrite files a running
+server holds open, so when a rebuild is due Rack stops the app first and starts
+it again once the build succeeds — a failed build leaves the app stopped.
+
+So `rebuild.bat` should contain **only the build**, no `pause`, and must exit
+non-zero when the build fails:
+
+```bat
+@echo off
+cd /d "%~dp0"
+call npm run build || exit /b 1
+```
+
+To opt out of the auto-detection, set `"rebuild": false` in the manifest (or type
+`off` in the app editor).
 
 ## Runtime contract (env vars Rack injects)
 
@@ -99,6 +125,6 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
 
 Next.js inlines `NEXT_PUBLIC_*` at **build** time, so a production build's
 PocketBase URL is fixed when you build. Keep such a backend `managed: false` on a
-fixed port; to change it, update the port and rebuild (`setup.bat rebuild`).
+fixed port; to change it, update the port and rebuild (`rebuild.bat`).
 Fully runtime-swappable ports require reading the URL at runtime (a server config
 route or a proxy) rather than a `NEXT_PUBLIC_` var.

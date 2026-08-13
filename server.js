@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execSync } = require("child_process");
 
-const VERSION = "0.4";
+const VERSION = "0.5";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -82,6 +82,7 @@ function normalizeApp(app) {
   app.category = app.category || null;
   app.autostart = !!app.autostart; // start this app when the controller launches
   app.update = app.update || null; // shell command to fetch a new version (e.g. git pull)
+  app.rebuild = app.rebuild || null; // build step run after update; blank = auto-detect rebuild.bat
   delete app.exe;
   delete app.args;
   delete app.dir;
@@ -146,6 +147,8 @@ function stateOf(app) {
     category: app.category || null,
     autostart: !!app.autostart,
     update: app.update || null,
+    rebuild: app.rebuild || null,
+    rebuildStep: (rebuildStepFor(app) || {}).label || null,
     commands,
     running: runningCmds.length > 0,
     runningCount: runningCmds.length,
@@ -314,7 +317,9 @@ function startApp(app) {
     proc.on("error", (e) => pushLog(app, i, "err", `[controller] error: ${e.message}`));
     proc.on("exit", (code, signal) => {
       pushLog(app, i, "out", `[controller] process exited (code ${code ?? signal})`);
-      slot.proc = null;
+      // A late exit event from an older process must not clear a fresh one
+      // (a restart can start the replacement before this fires).
+      if (slot.proc === proc) slot.proc = null;
       broadcast({ type: "status", app: stateOf(app) });
     });
   });
@@ -354,32 +359,101 @@ function stopApp(app) {
   return { ok: stopped > 0 || hasStopCmd, error: stopped || hasStopCmd ? undefined : "Not running" };
 }
 
-// Run an app's `update` command (e.g. `git pull`) and stream its output to the
-// UI via SSE. Runs in the first process's folder (the repo root).
+// An app's folder — where its update / rebuild commands run (the repo root).
+function appDir(app) {
+  return (app.commands[0] && app.commands[0].dir) || ROOT;
+}
+
+// New code often has to be compiled before it can run, so ⟳ Update runs a second
+// step after the update command: the app's `rebuild` command, or — when none is
+// set — a `rebuild.bat` sitting in its folder. Set `rebuild` to "off" to skip it.
+const REBUILD_OFF = /^(off|none|no|false)$/i;
+const REBUILD_FILES = ["rebuild.bat", "rebuild.cmd", "rebuild.sh"];
+function rebuildStepFor(app) {
+  const explicit = (app.rebuild || "").trim();
+  if (explicit) return REBUILD_OFF.test(explicit) ? null : { cmd: explicit, label: explicit };
+  const dir = appDir(app);
+  for (const f of REBUILD_FILES) {
+    const p = path.join(dir, f);
+    if (fs.existsSync(p)) return { cmd: f.endsWith(".sh") ? `sh "${p}"` : `"${p}"`, label: f };
+  }
+  return null;
+}
+
+// Run an app's update sequence (update command, then rebuild) and stream the
+// output to the UI via SSE. A failed step skips the rest.
 const updateProcs = new Map();
 function updateApp(app) {
-  if (!app.update) return { ok: false, error: "No update command set for this app." };
   if (updateProcs.get(app.id)) return { ok: false, error: "An update is already running." };
-  const dir = (app.commands[0] && app.commands[0].dir) || ROOT;
+  const rebuild = rebuildStepFor(app);
+  if (!app.update && !rebuild) return { ok: false, error: "No update command set for this app." };
+
+  const dir = appDir(app);
   const emit = (stream, line) => broadcast({ type: "update-log", id: app.id, stream, line });
-  emit("out", `[update] ${app.update}   (in ${dir})`);
-  let proc;
-  try {
-    proc = spawn(app.update, { cwd: dir, windowsHide: true, shell: true });
-  } catch (e) {
-    return { ok: false, error: e.message };
+  const steps = [];
+  if (app.update) steps.push({ tag: "update", cmd: app.update, label: app.update });
+  if (rebuild) steps.push({ tag: "rebuild", cmd: rebuild.cmd, label: rebuild.label });
+
+  // A build can't overwrite files the running app still holds open, so stop it
+  // first and bring it back once the build succeeds.
+  const wasRunning = !!rebuild && slotsFor(app).some((s) => s.proc);
+  if (wasRunning) {
+    emit("out", "[update] stopping the app first — it restarts after the rebuild");
+    stopApp(app);
   }
-  updateProcs.set(app.id, proc);
-  const pump = (stream) => (d) =>
-    d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => emit(stream, l));
-  proc.stdout.on("data", pump("out"));
-  proc.stderr.on("data", pump("err"));
-  proc.on("error", (e) => emit("err", `[update] error: ${e.message}`));
-  proc.on("exit", (code) => {
-    updateProcs.delete(app.id);
-    emit("out", `[update] finished (exit code ${code})`);
-    broadcast({ type: "update-done", id: app.id, code });
-  });
+
+  const finish = (code) => {
+    const done = (restarted) => {
+      updateProcs.delete(app.id);
+      emit("out", `[update] finished (exit code ${code})`);
+      broadcast({ type: "update-done", id: app.id, code, restarted });
+    };
+    if (!wasRunning || code !== 0) return done(false);
+    emit("out", "[update] restarting the app...");
+    // Stopping is asynchronous (taskkill), so wait for the old processes to
+    // actually be gone — starting over a live slot would be a silent no-op.
+    const restart = (tries = 0) => {
+      if (slotsFor(app).some((s) => s.proc)) {
+        if (tries < 40) return setTimeout(() => restart(tries + 1), 250);
+        emit("err", "[update] the app hasn't stopped — start it by hand.");
+        return done(false);
+      }
+      const r = startApp(app);
+      if (!r.ok) emit("err", `[update] restart failed: ${r.error}`);
+      done(r.ok);
+    };
+    restart();
+  };
+
+  const runStep = (i) => {
+    const step = steps[i];
+    const next = steps[i + 1];
+    emit("out", `[${step.tag}] ${step.label}   (in ${dir})`);
+    let proc;
+    try {
+      proc = spawn(step.cmd, { cwd: dir, windowsHide: true, shell: true });
+    } catch (e) {
+      emit("err", `[${step.tag}] error: ${e.message}`);
+      return finish(1);
+    }
+    updateProcs.set(app.id, proc);
+    const pump = (stream) => (d) =>
+      d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => emit(stream, l));
+    proc.stdout.on("data", pump("out"));
+    proc.stderr.on("data", pump("err"));
+    proc.on("error", (e) => emit("err", `[${step.tag}] error: ${e.message}`));
+    proc.on("exit", (code) => {
+      if (code !== 0) {
+        if (next) emit("err", `[${step.tag}] failed — skipping ${next.tag}.`);
+        return finish(code);
+      }
+      if (next) return runStep(i + 1);
+      finish(code);
+    });
+  };
+
+  updateProcs.set(app.id, true); // claim the slot before the first spawn
+  runStep(0);
   return { ok: true };
 }
 
@@ -538,6 +612,8 @@ function buildFromManifest(dir, man, nameOverride) {
   if (man.category) app.category = String(man.category);
   if (man.autostart != null) app.autostart = !!man.autostart;
   if (man.update) app.update = String(man.update);
+  // `"rebuild": false` opts out of the rebuild.bat auto-detection.
+  if (man.rebuild != null) app.rebuild = man.rebuild === false ? "off" : String(man.rebuild);
   return { app };
 }
 
@@ -571,6 +647,7 @@ function resolveApp(spec) {
   if (spec.category != null) app.category = String(spec.category).trim() || null;
   if (spec.autostart != null) app.autostart = !!spec.autostart;
   if (spec.update != null) app.update = String(spec.update).trim() || null;
+  if (spec.rebuild != null) app.rebuild = String(spec.rebuild).trim() || null;
   return { app };
 }
 
@@ -649,6 +726,7 @@ const server = http.createServer(async (req, res) => {
       if ("category" in body) app.category = (String(body.category || "").trim()) || null;
       if ("autostart" in body) app.autostart = !!body.autostart;
       if ("update" in body) app.update = (String(body.update || "").trim()) || null;
+      if ("rebuild" in body) app.rebuild = (String(body.rebuild || "").trim()) || null;
       if (Array.isArray(body.commands)) {
         const rebuilt = [];
         for (let i = 0; i < body.commands.length; i++) {

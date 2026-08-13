@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5
+- **⟳ Update now rebuilds too** — if the app's folder has a `rebuild.bat`, it
+  runs straight after the update command, in the same live log. One click is
+  pull → build.
+- Rack stops the app before the build (a build can't overwrite files a running
+  server holds open) and starts it again once the build succeeds. A failed pull
+  skips the build; a failed build leaves the app stopped.
+- New **Rebuild command** field in the app editor and `rebuild` in `rack.json` —
+  point it at a different build command, or `off` / `false` to skip it.
+- Apps with only a `rebuild.bat` and no update command get the button too.
+
 ## v0.4
 - **Copy SDK prompt** — grab a ready-made prompt for your AI coding tool that
   makes a new project Rack-ready. In the ⚙ menu, and linked from **+ Add app**.

@@ -17,6 +17,12 @@ standalone launchers working.
   seeding) must **not** live in the run path. Put it in a separate `setup.bat`
   (or `setup.sh`) the user runs by hand once. Run scripts should only start a
   server, instantly and repeatably.
+- If the project has a **build step** (anything that must be recompiled after the
+  source changes — `npm run build`, `go build`, `dotnet publish`, …), put exactly
+  that in a **`rebuild.bat`** in the project root. Rack runs it automatically
+  after ⟳ Update, so new code is compiled before it's started. Same rules as a
+  launcher: no `start`, no `pause`, no browser-open — and it must **exit
+  non-zero when the build fails**, so Rack doesn't restart a broken build.
 
 ## Ports come from the environment
 
@@ -48,6 +54,7 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
   "autostart": false,
   "setup": "setup.bat",
   "update": "git pull",
+  "rebuild": "rebuild.bat",
   "processes": [
     {
       "name": "Backend",
@@ -79,6 +86,7 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
 | `autostart` | app | `true` = start when Rack launches (e.g. on boot). |
 | `setup` | app | One-time command, shown as a hint. Not run as a process. |
 | `update` | app | Optional command (e.g. `git pull`) shown as a ⟳ Update button. |
+| `rebuild` | app | Build command run right after `update`. Omit it and Rack runs `rebuild.bat` from the project root if one exists; `false` disables that. |
 | `processes[]` | app | One entry per long-running server. |
 | `name` | process | Console label. |
 | `command` | process | Path relative to the project root, an `.exe`/`.bat`, or a typed command like `npm run start`. |
@@ -106,18 +114,21 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
    what you found before changing anything.
 2. Create one foreground-safe launcher script per server: no `start`, no
    `pause`, no browser-open; read the port from its env var with a default.
-3. Create `setup.bat` for the one-time work (support a `rebuild` argument if
-   there's a build step). `pause` is fine there since it's run by hand; exit
-   non-zero on failure.
-4. Write `rack.json` describing every process with the correct command, port,
-   `portEnv`, `managed`, useful `links`, and `setup` / `update` commands.
-5. Ensure machine-specific state is git-ignored (databases, `.env*`, build
+3. Create `setup.bat` for the one-time work. `pause` is fine there since it's run
+   by hand; exit non-zero on failure.
+4. If the project has a build step, create `rebuild.bat` containing only that
+   build (no `pause`, exits non-zero on failure), and have `setup.bat` call it
+   rather than duplicating the build.
+5. Write `rack.json` describing every process with the correct command, port,
+   `portEnv`, `managed`, useful `links`, and `setup` / `update` / `rebuild`
+   commands.
+6. Ensure machine-specific state is git-ignored (databases, `.env*`, build
    output, `node_modules`, downloaded binaries) so updates only change code and
    never destroy data. Config that must vary per machine belongs in an ignored
    env file, not in tracked source.
-6. Verify each launcher actually serves on its port, then **stop it and confirm
+7. Verify each launcher actually serves on its port, then **stop it and confirm
    the port is free again** — do not leave orphaned processes or busy ports.
-7. Finish by telling me the folder path to point Rack at, and what to run once.
+8. Finish by telling me the folder path to point Rack at, and what to run once.
 
 Once done, adding this app to Rack is: **+ Add app → point at the project folder
 → Save**, and every process is imported automatically.

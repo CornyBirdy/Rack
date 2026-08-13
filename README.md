@@ -89,8 +89,18 @@ clear what acts on the controller vs. the selected app.
 
 Give an app an **Update command** (in the editor, e.g. `git pull`) and a **⟳
 Update** button appears. Click it to fetch a new version and watch the output
-stream live, then press Run. Because machine-specific state (`.env`, databases,
-build output) is git-ignored, an update only changes code — your data stays put.
+stream live. Because machine-specific state (`.env`, databases, build output) is
+git-ignored, an update only changes code — your data stays put.
+
+**Apps that need compiling** get a second step for free: if the app's folder has
+a **`rebuild.bat`**, Rack runs it right after the update, in the same log. Since
+a build can't overwrite files a running server is holding open, Rack stops the
+app before building and starts it again once the build succeeds — so one click
+is pull → build → back up. A failed pull skips the build, and a failed build
+leaves the app stopped so you never run half-built code.
+
+Fill in **Rebuild command** in the editor to point at a different build command,
+or type `off` to skip the rebuild entirely.
 
 ## Tailscale Funnel (public access)
 
