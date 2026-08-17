@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.6
+- **Cloudflare Tunnel** — publish a process on a permanent hostname of your own
+  domain (`app.example.com`), not just a Tailscale address.
+- The Funnel dropdown became a single **Public** dropdown covering both
+  providers. One process, one public route.
+- **＋ New tunnel…** creates the tunnel and its DNS record for you and shows the
+  live `cloudflared` output. Installing cloudflared and `cloudflared tunnel
+  login` stay manual — that login is a browser flow Rack won't drive.
+- Rack runs `cloudflared` itself, so a tunnel is always torn down with the
+  process it publishes — no public URL left answering 502s.
+- **auto** checkbox per process: bring the tunnel up whenever the process runs.
+- A named tunnel can only be bound to one process (running one twice makes
+  Cloudflare split traffic between them). Failures show `● failed` with a
+  **log ↗** into the last 200 lines of cloudflared output.
+
 ## v0.5
 - **⟳ Update now rebuilds too** — if the app's folder has a `rebuild.bat`, it
   runs straight after the update command, in the same live log. One click is

@@ -77,6 +77,7 @@ A Docker app looks like this — one process, using `stop` for a graceful teardo
 | `managed` | process | `true` = Rack may move this port to avoid clashes; `false` = fixed (declared, warn-only). Defaults: PocketBase → managed, everything else → fixed. |
 | `stop` | process | Optional shell command run on **Stop** for a graceful teardown (e.g. `docker compose down`). Rack runs it, then kills the process. |
 | `links[]` | process | Buttons in the details panel: `{ "label", "path" }` → `http://127.0.0.1:<port><path>`. |
+| `cloudflare` | process | Publish this port on a Cloudflare named tunnel: `{ "tunnel": "my-app", "hostname": "app.example.com", "auto": true }`. The tunnel must already exist (`cloudflared tunnel create`) — Rack won't create one during an import. `auto` brings it up with the process. |
 
 ## Update → rebuild
 

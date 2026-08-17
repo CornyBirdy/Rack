@@ -97,6 +97,7 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
 | `managed` | process | `true` = Rack may reassign this port to avoid clashes. `false` = fixed. |
 | `stop` | process | Optional graceful-shutdown command (e.g. `docker compose down`). |
 | `links[]` | process | Buttons in Rack: `{label, path}` → `http://127.0.0.1:<port><path>`. |
+| `cloudflare` | process | Optional. Publishes this port on an **existing** Cloudflare named tunnel: `{"tunnel": "my-app", "hostname": "app.example.com", "auto": true}`. Leave it out unless the user asked for public access. |
 
 ## Choosing `managed` vs fixed ports
 

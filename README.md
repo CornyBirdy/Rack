@@ -102,10 +102,15 @@ leaves the app stopped so you never run half-built code.
 Fill in **Rebuild command** in the editor to point at a different build command,
 or type `off` to skip the rebuild entirely.
 
-## Tailscale Funnel (public access)
+## Public access
 
-If Tailscale is installed and logged in on the machine running Rack, each process
-that serves a port gets a **Funnel** dropdown in its details card. Pick a public
+Each process that serves a port gets one **Public** dropdown in its details card,
+listing whichever providers exist on this machine. A process has one public
+route or none — picking a new one turns the old one off.
+
+### Tailscale Funnel
+
+If Tailscale is installed and logged in on the machine running Rack, pick a public
 port and Rack runs the Tailscale command for you, then shows a **Public URL**
 link and a green **● public** marker.
 
@@ -116,8 +121,39 @@ used by another process shows as *in use* and can't be picked twice. Switching a
 process to a different public port turns the old one off first, so you never
 leave a stray funnel behind.
 
-> Anything you funnel is reachable from the **public internet** — only turn it on
-> for services you intend to share.
+### Cloudflare Tunnel
+
+Gives a process a **permanent hostname on your own domain** — `app.example.com`
+— instead of a Tailscale address. Rack supports *named* tunnels only, so this
+needs a Cloudflare account and a domain on Cloudflare. Two one-time steps, by
+hand, in a terminal:
+
+```
+winget install --id Cloudflare.cloudflared
+cloudflared tunnel login
+```
+
+The login opens a browser and writes credentials to `~/.cloudflared` — Rack
+points you at it but never drives it. After that, pick **＋ New tunnel…** in the
+Public dropdown, give it a name and a hostname, and Rack runs
+`cloudflared tunnel create` and `cloudflared tunnel route dns` for you, streaming
+the output. The tunnel is then bound to that process for good; it appears by name
+in the dropdown of every other process too, but only one process may use it.
+
+Unlike Tailscale — whose daemon holds a funnel up on its own — `cloudflared` is a
+process Rack runs and supervises. That means:
+
+- A tunnel is **always stopped with the process it publishes**, including when
+  that process crashes or when Rack shuts down. A public hostname never outlives
+  the thing behind it.
+- Tick **auto** to bring the tunnel up automatically whenever the process runs;
+  leave it off and use **Connect** by hand.
+- If cloudflared fails, the row shows **● failed** — hover it for the reason, or
+  click **log ↗** for the last 200 lines of output.
+
+> Anything you publish is reachable from the **public internet** — only turn it
+> on for services you intend to share. `cloudflared tunnel route dns` writes a
+> real DNS record into your Cloudflare zone.
 
 ## Docker (and other graceful stops)
 

@@ -174,6 +174,71 @@
     </div>
   </div>
 
+  <!-- ======================= cloudflare tunnel modal ======================= -->
+  <div id="cf-modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3 id="cf-title">Publish with Cloudflare</h3>
+      <p class="muted" id="cf-sub">Give this process a permanent public hostname on your own domain.</p>
+      <div class="modal-row2">
+        <label>
+          Tunnel name
+          <input id="cf-name" type="text" placeholder="my-app" />
+        </label>
+        <label>
+          Hostname
+          <input id="cf-host" type="text" placeholder="app.example.com" />
+        </label>
+      </div>
+      <label class="checkbox-row">
+        <input id="cf-auto" type="checkbox" checked />
+        <span>Publish automatically whenever this process runs</span>
+      </label>
+      <p class="cf-warn">
+        ⚠ This creates a DNS record in your Cloudflare zone and makes the process reachable from
+        the <strong>public internet</strong>. Rack runs:
+        <code id="cf-cmds">cloudflared tunnel create · cloudflared tunnel route dns</code>
+      </p>
+      <pre id="cf-log" class="term" hidden></pre>
+      <p id="cf-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button id="cf-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="cf-save" class="btn btn-run">Create &amp; connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= cloudflare setup help ======================= -->
+  <div id="cf-setup-modal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <h3>Set up Cloudflare</h3>
+      <p class="muted">
+        Named tunnels need a Cloudflare account and a domain on Cloudflare. Run these once, by
+        hand, in a terminal — the login opens a browser and writes credentials to
+        <code>~/.cloudflared</code>, so Rack doesn't do it for you.
+      </p>
+      <ol class="cf-steps">
+        <li><code id="cf-step-install">winget install --id Cloudflare.cloudflared</code></li>
+        <li><code>cloudflared tunnel login</code> <span class="muted">— pick your domain in the browser</span></li>
+      </ol>
+      <p class="muted">Then reopen this dropdown — Rack re-checks every 30 seconds.</p>
+      <div class="modal-actions">
+        <button id="cf-setup-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= tunnel log modal ======================= -->
+  <div id="cf-log-modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3 id="cf-log-title">Tunnel log</h3>
+      <p class="muted" id="cf-log-sub">Recent cloudflared output.</p>
+      <pre id="cf-log-body" class="term"></pre>
+      <div class="modal-actions">
+        <button id="cf-log-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ======================= changelog modal ======================= -->
   <div id="changelog-modal" class="modal-backdrop" hidden>
     <div class="modal modal-wide">

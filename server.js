@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execSync } = require("child_process");
 
-const VERSION = "0.5";
+const VERSION = "0.6";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -78,6 +78,7 @@ function normalizeApp(app) {
     portEnv: c.portEnv || null, // env var the controller sets to the effective port
     links: Array.isArray(c.links) ? c.links : null, // [{ label, path }]
     stopCommand: c.stopCommand || null, // shell command run on Stop (e.g. docker compose down)
+    cloudflare: cfBinding(c.cloudflare), // { tunnel, hostname, auto } — publish this port publicly
   }));
   app.category = app.category || null;
   app.autostart = !!app.autostart; // start this app when the controller launches
@@ -133,6 +134,7 @@ function stateOf(app) {
       portEnv: c.portEnv || null,
       links: c.links || null,
       stopCommand: c.stopCommand || null,
+      cloudflare: c.cloudflare || null,
       running,
       pid: running ? s.pid : null,
       startedAt: running ? s.startedAt : null,
@@ -319,9 +321,20 @@ function startApp(app) {
       pushLog(app, i, "out", `[controller] process exited (code ${code ?? signal})`);
       // A late exit event from an older process must not clear a fresh one
       // (a restart can start the replacement before this fires).
-      if (slot.proc === proc) slot.proc = null;
+      if (slot.proc === proc) {
+        slot.proc = null;
+        // A tunnel must never outlive what it publishes, or the public URL
+        // starts answering 502s from Cloudflare's edge.
+        stopTunnel(app.id, i);
+      }
       broadcast({ type: "status", app: stateOf(app) });
     });
+
+    // Auto-expose: a bound tunnel comes up with the process. The short delay
+    // just keeps the logs tidy — cloudflared would retry anyway.
+    if (cmd.cloudflare && cmd.cloudflare.tunnel && cmd.cloudflare.auto) {
+      setTimeout(() => connectTunnel(app, i), 1200);
+    }
   });
 
   broadcast({ type: "status", app: stateOf(app) });
@@ -343,6 +356,7 @@ function stopApp(app) {
   let stopped = 0;
   slots.forEach((slot, i) => {
     const cmd = app.commands[i];
+    stopTunnel(app.id, i); // take the public route down before the process behind it
     // A stopCommand does a graceful teardown (e.g. `docker compose down`).
     if (cmd && cmd.stopCommand) {
       pushLog(app, i, "out", `[controller] stop: ${cmd.stopCommand}`);
@@ -601,6 +615,7 @@ function buildFromManifest(dir, man, nameOverride) {
     if (proc.managed != null) r.cmd.managePort = !!proc.managed; // manifest wins over auto-detect
     if (proc.portEnv) r.cmd.portEnv = proc.portEnv;
     if (Array.isArray(proc.links)) r.cmd.links = proc.links;
+    if (proc.cloudflare) r.cmd.cloudflare = cfBinding(proc.cloudflare);
     commands.push(r.cmd);
   }
   const app = {
@@ -734,6 +749,11 @@ const server = http.createServer(async (req, res) => {
           if (r.error) return sendJSON(res, 400, { error: `Process ${i + 1}: ${r.error}` });
           rebuilt.push(r.cmd);
         }
+        // The editor doesn't show Cloudflare bindings, so carry them across an
+        // edit by position instead of silently unpublishing a process.
+        rebuilt.forEach((c, i) => {
+          if (app.commands[i] && app.commands[i].cloudflare) c.cloudflare = app.commands[i].cloudflare;
+        });
         // stop anything running before we change the process list out from under it
         stopApp(app);
         app.commands = rebuilt;
@@ -795,6 +815,43 @@ const server = http.createServer(async (req, res) => {
       if (!r.ok) return sendJSON(res, 400, r);
       broadcast({ type: "funnel" });
       return sendJSON(res, 200, await funnelState());
+    }
+
+    // GET /api/cf  → cloudflared availability, named tunnels, live tunnels
+    if (parts[1] === "cf" && !parts[2] && req.method === "GET") {
+      return sendJSON(res, 200, await cfState());
+    }
+
+    // POST /api/cf  {appId, cmdIndex, tunnel|null, hostname?, auto?, connect?}
+    //   Binds a process to a named tunnel (or unbinds it with tunnel:null).
+    if (parts[1] === "cf" && !parts[2] && req.method === "POST") {
+      const body = await readBody(req);
+      const r = setTunnelBinding(body);
+      if (!r.ok) return sendJSON(res, 400, r);
+      broadcast({ type: "cf" });
+      return sendJSON(res, 200, await cfState());
+    }
+
+    // POST /api/cf/connect  {appId, cmdIndex, enable}  — bring one tunnel up/down now
+    if (parts[1] === "cf" && parts[2] === "connect" && req.method === "POST") {
+      const { appId, cmdIndex, enable } = await readBody(req);
+      const target = apps.find((a) => a.id === appId);
+      if (!target) return sendJSON(res, 404, { error: "Unknown app" });
+      const r = enable ? connectTunnel(target, Number(cmdIndex)) : stopTunnel(appId, Number(cmdIndex));
+      if (!r.ok) return sendJSON(res, 400, r);
+      return sendJSON(res, 200, await cfState());
+    }
+
+    // POST /api/cf/create  {name, hostname}  — create the tunnel + its DNS route
+    if (parts[1] === "cf" && parts[2] === "create" && req.method === "POST") {
+      const r = createTunnel(await readBody(req));
+      return sendJSON(res, r.ok ? 200 : 400, r);
+    }
+
+    // GET /api/cf/log?app=&cmd=  → recent cloudflared output for one tunnel
+    if (parts[1] === "cf" && parts[2] === "log" && req.method === "GET") {
+      const t = tunnels.get(tKey(url.searchParams.get("app"), url.searchParams.get("cmd")));
+      return sendJSON(res, 200, { log: t ? t.log : [] });
     }
 
     // GET /api/sdk-prompt  → the copy-paste prompt for AI coding tools
@@ -962,6 +1019,394 @@ async function setFunnel({ publicPort, localPort, enable }) {
   return { ok: true };
 }
 
+/* ------------------------------------------------------ cloudflare tunnel */
+
+// Tailscale's daemon owns funnel state, so above we just shell out and read it
+// back. Cloudflare has no such daemon: `cloudflared` is a plain child process
+// per tunnel, so Rack spawns it, scrapes its status, and owns its lifetime —
+// which is why a tunnel is always torn down with the process it publishes.
+//
+// Only *named* tunnels are supported: they need a Cloudflare account, a domain,
+// and a one-time `cloudflared tunnel login`, but give a stable hostname. The
+// login is a browser flow writing credentials to ~/.cloudflared — Rack points
+// you at it and never automates it.
+
+const CF_MAX_LOG = 200;
+const CF_INSTALL =
+  process.platform === "win32"
+    ? "winget install --id Cloudflare.cloudflared"
+    : process.platform === "darwin"
+    ? "brew install cloudflared"
+    : "See https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/";
+
+let CF_BIN;
+let CF_PROBED = 0;
+function cf() {
+  // Unlike the Tailscale probe this doesn't cache a miss for the whole session:
+  // installing cloudflared is step one of the setup flow, so "not found" has to
+  // be able to become "found" without restarting Rack.
+  if (CF_BIN || (CF_BIN === null && Date.now() - CF_PROBED < 30000)) return CF_BIN;
+  const winget =
+    process.env.LOCALAPPDATA &&
+    path.join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links", "cloudflared.exe");
+  const candidates =
+    process.platform === "win32"
+      ? [
+          "cloudflared",
+          "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
+          "C:\\Program Files\\cloudflared\\cloudflared.exe",
+          winget,
+        ].filter(Boolean)
+      : [
+          "cloudflared",
+          "/usr/local/bin/cloudflared",
+          "/opt/homebrew/bin/cloudflared",
+          "/usr/bin/cloudflared",
+        ];
+  CF_BIN = null;
+  CF_PROBED = Date.now();
+  for (const c of candidates) {
+    try {
+      execSync(`"${c}" --version`, { stdio: "ignore", timeout: 5000 });
+      CF_BIN = c;
+      break;
+    } catch {}
+  }
+  return CF_BIN;
+}
+
+function cfExec(args) {
+  return new Promise((resolve) => {
+    const bin = cf();
+    if (!bin) return resolve({ ok: false, out: "", err: "cloudflared not found" });
+    exec(`"${bin}" ${args}`, { timeout: 25000 }, (err, stdout, stderr) =>
+      resolve({
+        ok: !err,
+        out: (stdout || "").trim(),
+        err: (stderr || "").trim() || (err ? err.message : ""),
+      })
+    );
+  });
+}
+
+// `tunnel login` writes cert.pem here — its presence is what makes named
+// tunnels usable at all.
+function cfLoggedIn() {
+  try {
+    const home = process.env.USERPROFILE || process.env.HOME || ROOT;
+    return fs.existsSync(path.join(home, ".cloudflared", "cert.pem"));
+  } catch {
+    return false;
+  }
+}
+
+// Normalize a binding from apps.json or a manifest into { tunnel, hostname, auto }.
+function cfBinding(v) {
+  if (!v || !v.tunnel) return null;
+  return {
+    tunnel: String(v.tunnel).trim(),
+    hostname: (v.hostname && String(v.hostname).trim()) || null,
+    auto: !!v.auto,
+  };
+}
+
+let cfListCache = { at: 0, list: [] };
+async function cfTunnels(force) {
+  if (!force && Date.now() - cfListCache.at < 15000) return cfListCache.list;
+  const r = await cfExec("tunnel list --output json");
+  let list = [];
+  try {
+    const j = JSON.parse(r.out);
+    if (Array.isArray(j))
+      list = j
+        .filter((t) => t && t.name && !t.deleted_at)
+        .map((t) => ({
+          id: t.id,
+          name: t.name,
+          connections: Array.isArray(t.connections) ? t.connections.length : 0,
+        }));
+  } catch {}
+  cfListCache = { at: Date.now(), list };
+  return list;
+}
+
+// "appId:cmdIndex" -> { proc, pid, name, hostname, status, error, log[] }
+const tunnels = new Map();
+const tKey = (appId, idx) => `${appId}:${idx}`;
+
+function tunnelPush(t, stream, line) {
+  t.log.push({ s: stream, line });
+  if (t.log.length > CF_MAX_LOG) t.log.shift();
+}
+
+function startTunnel(app, idx) {
+  const cmd = app.commands[idx];
+  const bind = cmd && cmd.cloudflare;
+  if (!bind || !bind.tunnel) return { ok: false, error: "No Cloudflare tunnel is set for this process." };
+  if (!cf()) return { ok: false, error: "cloudflared isn't installed on this machine." };
+
+  const key = tKey(app.id, idx);
+  const existing = tunnels.get(key);
+  if (existing && existing.proc) return { ok: true };
+
+  const slot = slotsFor(app)[idx];
+  if (!slot || !slot.proc)
+    return { ok: false, error: "Start the process first — a tunnel can't outlive it." };
+  const port = slot.effPort || cmd.port;
+  if (!port) return { ok: false, error: "That process has no port to publish." };
+
+  const t = {
+    proc: null,
+    pid: null,
+    name: bind.tunnel,
+    hostname: bind.hostname || null,
+    status: "connecting",
+    error: null,
+    log: [],
+  };
+  tunnels.set(key, t);
+
+  // --url overrides the tunnel's ingress, so one named tunnel maps to exactly
+  // one local port and no config.yml is needed.
+  const args = ["tunnel", "--no-autoupdate", "run", "--url", `http://localhost:${port}`, bind.tunnel];
+  let proc;
+  try {
+    proc = spawn(cf(), args, { cwd: ROOT, windowsHide: true });
+  } catch (e) {
+    t.status = "failed";
+    t.error = e.message;
+    broadcast({ type: "cf" });
+    return { ok: false, error: e.message };
+  }
+  t.proc = proc;
+  t.pid = proc.pid;
+  tunnelPush(t, "out", `[rack] cloudflared ${args.join(" ")}`);
+
+  const pump = (stream) => (d) => {
+    let changed = false;
+    for (const line of d.toString().split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      tunnelPush(t, stream, line);
+      if (t.status !== "public" && /Registered tunnel connection|Connection [\w-]+ registered/i.test(line)) {
+        t.status = "public";
+        t.error = null;
+        changed = true;
+      }
+      if (/\bERR\b|failed to|Cannot determine default/i.test(line) && !t.error) {
+        t.error = line.slice(-240);
+      }
+    }
+    if (changed) broadcast({ type: "cf" });
+  };
+  proc.stdout.on("data", pump("out"));
+  proc.stderr.on("data", pump("err")); // cloudflared logs everything to stderr
+  proc.on("error", (e) => {
+    t.status = "failed";
+    t.error = e.message;
+    tunnelPush(t, "err", e.message);
+    broadcast({ type: "cf" });
+  });
+  proc.on("exit", (code) => {
+    if (tunnels.get(key) !== t) return; // superseded by a newer tunnel
+    t.proc = null;
+    if (t.stopping) {
+      tunnels.delete(key); // clean stop — drop back to "bound but off"
+    } else {
+      t.status = "failed";
+      if (!t.error) t.error = `cloudflared exited (code ${code})`;
+    }
+    broadcast({ type: "cf" });
+  });
+
+  broadcast({ type: "cf" });
+  return { ok: true };
+}
+
+// Killing is asynchronous (taskkill), so a re-point has to wait for the old
+// cloudflared to actually be gone — spawning over it would double-register the
+// tunnel and split traffic between the two.
+function connectTunnel(app, idx, tries = 0) {
+  const t = tunnels.get(tKey(app.id, idx));
+  if (t && t.proc) {
+    if (tries > 40) return { ok: false, error: "The previous tunnel hasn't stopped." };
+    setTimeout(() => connectTunnel(app, idx, tries + 1), 250);
+    return { ok: true };
+  }
+  return startTunnel(app, idx);
+}
+
+function stopTunnel(appId, idx) {
+  const key = tKey(appId, idx);
+  const t = tunnels.get(key);
+  if (!t) return { ok: true };
+  if (t.proc) {
+    t.stopping = true;
+    t.status = "off";
+    killPid(t.pid);
+  } else {
+    tunnels.delete(key);
+  }
+  broadcast({ type: "cf" });
+  return { ok: true };
+}
+
+async function cfState() {
+  if (!cf())
+    return {
+      available: false,
+      reason: "cloudflared isn't installed on this machine.",
+      install: CF_INSTALL,
+      loggedIn: false,
+      tunnels: [],
+      active: [],
+    };
+  const loggedIn = cfLoggedIn();
+  const named = loggedIn ? await cfTunnels() : [];
+  const active = [];
+  for (const [key, t] of tunnels) {
+    const [appId, idx] = key.split(":");
+    active.push({
+      appId,
+      cmdIndex: Number(idx),
+      name: t.name,
+      hostname: t.hostname,
+      status: t.status,
+      url: t.hostname ? `https://${t.hostname}` : null,
+      error: t.error || null,
+    });
+  }
+  return { available: true, loggedIn, install: CF_INSTALL, tunnels: named, active };
+}
+
+function setTunnelBinding({ appId, cmdIndex, tunnel, hostname, auto, connect }) {
+  const app = apps.find((a) => a.id === appId);
+  if (!app) return { ok: false, error: "Unknown app." };
+  const idx = Number(cmdIndex);
+  const cmd = app.commands[idx];
+  if (!cmd) return { ok: false, error: "Unknown process." };
+
+  if (!tunnel) {
+    stopTunnel(appId, idx);
+    cmd.cloudflare = null;
+    saveApps();
+    broadcast({ type: "apps" });
+    return { ok: true };
+  }
+
+  // Running one named tunnel twice makes Cloudflare load-balance between the
+  // two, which reads as random flakiness — so a tunnel belongs to one process.
+  for (const a of apps)
+    for (let i = 0; i < a.commands.length; i++) {
+      const b = a.commands[i].cloudflare;
+      if (b && b.tunnel === tunnel && !(a.id === appId && i === idx))
+        return {
+          ok: false,
+          error: `Tunnel "${tunnel}" is already used by ${a.name} / ${a.commands[i].name}.`,
+        };
+    }
+
+  const prev = cmd.cloudflare;
+  cmd.cloudflare = cfBinding({
+    tunnel,
+    hostname: (hostname || "").trim() || (prev && prev.hostname) || null,
+    auto: auto == null ? !!(prev && prev.auto) : !!auto,
+  });
+  saveApps();
+
+  const live = tunnels.get(tKey(appId, idx));
+  const rebind = live && (live.name !== tunnel || live.hostname !== cmd.cloudflare.hostname);
+  if (rebind) stopTunnel(appId, idx);
+  if (connect !== false && slotsFor(app)[idx] && slotsFor(app)[idx].proc) connectTunnel(app, idx);
+
+  broadcast({ type: "apps" });
+  return { ok: true };
+}
+
+// Create the named tunnel (if it doesn't exist yet) and point a hostname at it.
+// Streams to the UI the same way an app update does.
+let cfCreating = false;
+function createTunnel({ name, hostname }) {
+  name = (name || "").trim();
+  hostname = (hostname || "").trim().toLowerCase();
+  if (!/^[a-zA-Z0-9][\w.-]*$/.test(name))
+    return { ok: false, error: "Pick a tunnel name (letters, numbers, dots, - and _)." };
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(hostname))
+    return { ok: false, error: "Enter the full hostname, e.g. app.example.com." };
+  if (!cf()) return { ok: false, error: "cloudflared isn't installed on this machine." };
+  if (!cfLoggedIn()) return { ok: false, error: "Run `cloudflared tunnel login` first." };
+  if (cfCreating) return { ok: false, error: "A tunnel is already being set up." };
+
+  cfCreating = true;
+  const emit = (stream, line) => broadcast({ type: "cf-log", stream, line });
+
+  (async () => {
+    const exists = (await cfTunnels(true)).some((t) => t.name === name);
+    const steps = [];
+    if (exists) emit("out", `[cloudflare] tunnel "${name}" already exists — reusing it.`);
+    else steps.push({ label: `tunnel create ${name}`, args: ["tunnel", "create", name] });
+    steps.push({
+      label: `tunnel route dns ${name} ${hostname}`,
+      args: ["tunnel", "route", "dns", name, hostname],
+      soft: true, // an existing record pointing here is fine
+    });
+
+    let finished = false;
+    const done = (ok, error) => {
+      if (finished) return;
+      finished = true;
+      cfCreating = false;
+      cfListCache.at = 0;
+      broadcast({ type: "cf-done", ok, error: error || null, name, hostname });
+      broadcast({ type: "cf" });
+    };
+
+    const run = (i) => {
+      const step = steps[i];
+      if (!step) return done(true);
+      emit("out", `[cloudflare] ${step.label}`);
+      let p;
+      try {
+        p = spawn(cf(), step.args, { cwd: ROOT, windowsHide: true });
+      } catch (e) {
+        emit("err", e.message);
+        return done(false, e.message);
+      }
+      let last = "";
+      const pump = (s) => (d) =>
+        d
+          .toString()
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .forEach((l) => {
+            last = l;
+            emit(s, l);
+          });
+      p.stdout.on("data", pump("out"));
+      p.stderr.on("data", pump("err"));
+      p.on("error", (e) => {
+        emit("err", e.message);
+        done(false, e.message);
+      });
+      p.on("exit", (code) => {
+        if (finished) return;
+        if (code === 0) return run(i + 1);
+        if (step.soft && /already exists|1003/i.test(last)) {
+          emit("out", "[cloudflare] that DNS record already exists — reusing it.");
+          return run(i + 1);
+        }
+        emit("err", `[cloudflare] failed (exit code ${code}).`);
+        done(false, last || `Step failed with exit code ${code}.`);
+      });
+    };
+    run(0);
+  })().catch((e) => {
+    cfCreating = false;
+    broadcast({ type: "cf-done", ok: false, error: e.message });
+  });
+
+  return { ok: true };
+}
+
 /* --------------------------------------------------------- run on boot (win) */
 
 function startupShortcutPath() {
@@ -1033,6 +1478,9 @@ function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   for (const app of apps) stopApp(app);
+  // Belt and braces: a surviving cloudflared would keep a public hostname
+  // pointing at a port nothing is listening on any more.
+  for (const t of tunnels.values()) if (t.pid) killPid(t.pid);
   setTimeout(() => process.exit(0), 800);
 }
 process.on("SIGINT", shutdown);

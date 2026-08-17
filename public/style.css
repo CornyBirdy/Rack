@@ -529,6 +529,33 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   font-weight: 700;
   color: var(--green);
 }
+.funnel-live.idle { color: var(--fg-muted); }
+.funnel-live.err { color: var(--red); }
+.funnel-auto {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.funnel-auto input { margin: 0; }
+.funnel-row .btn-sm { padding: 3px 9px; font-size: 0.75rem; }
+
+/* cloudflare dialogs */
+.cf-warn {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--fg-muted);
+  border-left: 2px solid var(--red);
+  padding-left: 9px;
+}
+.cf-warn code { display: block; margin-top: 4px; font-size: 0.74rem; }
+.cf-steps { margin: 6px 0 0; padding-left: 20px; font-size: 0.85rem; line-height: 1.9; }
+.cf-steps code { user-select: all; }
+#cf-log, #cf-log-body { max-height: 220px; margin-top: 10px; }
 .det-links .btn-link { padding: 5px 10px; font-size: 0.8rem; }
 .btn-danger-ghost { margin-top: 14px; }
 
