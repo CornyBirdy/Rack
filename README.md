@@ -133,13 +133,20 @@ winget install --id Cloudflare.cloudflared
 cloudflared tunnel login
 ```
 
-Open **⚙ → Set up Cloudflare** for both commands (click one to copy it); it
-ticks each step off as you finish it and reads **Cloudflare: ready** when you're
-done. Cloudflare stays out of the per-process Public dropdown until cloudflared
-is installed, so the ⚙ menu is where the feature lives until then.
+You don't have to type either one. Open **⚙ → Set up Cloudflare** and press
+**▶ Run** on each step — Rack runs the command as a supervised child, streams the
+output, and ticks the step off when it succeeds. **Stop** cancels a running step.
+Clicking the command itself still copies it, which is what you want if the
+install comes back needing an admin terminal. The menu item reads **Cloudflare:
+ready** once both steps are done.
 
-The login opens a browser and writes credentials to `~/.cloudflared` — Rack
-points you at it but never drives it. After that, pick **＋ New tunnel…** in the
+Two things Rack can't do for you: approving the Windows permission prompt the
+install may raise, and picking your domain in the browser window the login opens
+(it writes credentials to `~/.cloudflared`, then the dialog catches up on its
+own). A login left unfinished is given up on after 10 minutes.
+
+Cloudflare stays out of the per-process Public dropdown until cloudflared is
+installed, so the ⚙ menu is where the feature lives until then. After that, pick **＋ New tunnel…** in the
 Public dropdown, give it a name and a hostname, and Rack runs
 `cloudflared tunnel create` and `cloudflared tunnel route dns` for you, streaming
 the output. The tunnel is then bound to that process for good; it appears by name

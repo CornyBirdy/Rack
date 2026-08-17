@@ -568,10 +568,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   user-select: all;
 }
 .cf-steps code:hover { border-color: var(--accent); color: var(--accent); }
+.cf-steps .cf-run { margin-left: 6px; vertical-align: middle; }
 .cf-steps li.done { color: var(--fg-muted); }
 .cf-steps li.done::marker { content: "✓ "; color: var(--green); }
 .cf-steps li.done code { opacity: 0.6; }
-#cf-log, #cf-log-body { max-height: 220px; margin-top: 10px; }
+#cf-log, #cf-log-body, #cf-setup-log { max-height: 220px; margin-top: 10px; }
 .det-links .btn-link { padding: 5px 10px; font-size: 0.8rem; }
 .btn-danger-ghost { margin-top: 14px; }
 

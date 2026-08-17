@@ -222,12 +222,15 @@
         <li id="cf-step-1">
           Install cloudflared<br />
           <code id="cf-step-install">winget install --id Cloudflare.cloudflared</code>
+          <button class="btn btn-ghost btn-sm cf-run" data-step="install">▶ Run</button>
         </li>
         <li id="cf-step-2">
           Log in and pick your domain in the browser<br />
           <code>cloudflared tunnel login</code>
+          <button class="btn btn-ghost btn-sm cf-run" data-step="login">▶ Run</button>
         </li>
       </ol>
+      <pre id="cf-setup-log" class="term" hidden></pre>
       <p id="cf-setup-state" class="muted"></p>
       <div class="modal-actions">
         <button id="cf-setup-close" class="btn btn-ghost">Close</button>

@@ -842,6 +842,16 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, await cfState());
     }
 
+    // POST /api/cf/setup  {step: "install"|"login"}  — run a prerequisite command
+    if (parts[1] === "cf" && parts[2] === "setup" && !parts[3] && req.method === "POST") {
+      const r = runCfSetup(await readBody(req));
+      return sendJSON(res, r.ok ? 200 : 400, r);
+    }
+    if (parts[1] === "cf" && parts[2] === "setup" && parts[3] === "cancel" && req.method === "POST") {
+      const r = cancelCfSetup();
+      return sendJSON(res, r.ok ? 200 : 400, r);
+    }
+
     // POST /api/cf/create  {name, hostname}  — create the tunnel + its DNS route
     if (parts[1] === "cf" && parts[2] === "create" && req.method === "POST") {
       const r = createTunnel(await readBody(req));
@@ -1073,6 +1083,14 @@ function cf() {
     } catch {}
   }
   return CF_BIN;
+}
+
+// Forget a cached probe result — call after anything that could have installed
+// cloudflared or written its credentials.
+function cfResetProbe() {
+  CF_BIN = undefined;
+  CF_PROBED = 0;
+  cfListCache = { at: 0, list: [] };
 }
 
 function cfExec(args) {
@@ -1322,6 +1340,95 @@ function setTunnelBinding({ appId, cmdIndex, tunnel, hostname, auto, connect }) 
   return { ok: true };
 }
 
+/* ---- one-click setup: run the two prerequisite commands from the dialog ---- */
+
+// Both are one-off, machine-wide, and interactive in ways Rack can't answer for
+// you: the install can raise a UAC prompt, and the login blocks on a browser
+// round-trip. So they run as supervised children with their output streamed —
+// Rack shows you what's happening rather than pretending it didn't.
+
+const CF_SETUP_TIMEOUT = 10 * 60 * 1000;
+let cfSetupProc = null;
+
+function cfSetupCommand(step) {
+  if (step === "login") {
+    const bin = cf();
+    if (!bin) return { error: "Install cloudflared first." };
+    return { line: `"${bin}" tunnel login`, label: "cloudflared tunnel login" };
+  }
+  if (step === "install") {
+    if (cf()) return { error: "cloudflared is already installed." };
+    if (process.platform === "win32")
+      return {
+        // Accept the agreements up front: a prompt on stdin would just hang,
+        // since nothing is attached to answer it.
+        line: "winget install --id Cloudflare.cloudflared --accept-package-agreements --accept-source-agreements",
+        label: CF_INSTALL,
+      };
+    if (process.platform === "darwin")
+      return { line: "brew install cloudflared", label: CF_INSTALL };
+    return { error: "One-click install is Windows/macOS only — install cloudflared by hand." };
+  }
+  return { error: "Unknown setup step." };
+}
+
+function runCfSetup({ step }) {
+  if (cfSetupProc) return { ok: false, error: "A setup step is already running." };
+  const c = cfSetupCommand(step);
+  if (c.error) return { ok: false, error: c.error };
+
+  const emit = (stream, line) => broadcast({ type: "cf-setup-log", step, stream, line });
+  let proc;
+  try {
+    proc = spawn(c.line, { cwd: ROOT, windowsHide: true, shell: true });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  cfSetupProc = proc;
+
+  emit("out", `[setup] ${c.label}`);
+  if (step === "install")
+    emit("out", "[setup] if Windows asks permission to install, approve the prompt.");
+  else
+    emit("out", "[setup] a browser will open — pick the domain you want to use, then come back here.");
+
+  const pump = (s) => (d) =>
+    d.toString().split(/\r?\n/).filter((l) => l.trim()).forEach((l) => emit(s, l));
+  proc.stdout.on("data", pump("out"));
+  proc.stderr.on("data", pump("err"));
+
+  // The login waits on a human finishing a browser flow, so it can hang forever.
+  const timer = setTimeout(() => {
+    if (cfSetupProc === proc) {
+      emit("err", "[setup] gave up after 10 minutes — stopping.");
+      killPid(proc.pid);
+    }
+  }, CF_SETUP_TIMEOUT);
+
+  let finished = false;
+  const finish = (ok, msg) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    if (cfSetupProc === proc) cfSetupProc = null;
+    cfResetProbe(); // the whole point of the step was to change what's on disk
+    emit(ok ? "out" : "err", msg);
+    broadcast({ type: "cf-setup-done", step, ok });
+    broadcast({ type: "cf" });
+  };
+  proc.on("error", (e) => finish(false, `[setup] ${e.message}`));
+  proc.on("exit", (code) =>
+    finish(code === 0, code === 0 ? "[setup] done." : `[setup] exited with code ${code}.`)
+  );
+  return { ok: true };
+}
+
+function cancelCfSetup() {
+  if (!cfSetupProc) return { ok: false, error: "Nothing is running." };
+  killPid(cfSetupProc.pid);
+  return { ok: true };
+}
+
 // Create the named tunnel (if it doesn't exist yet) and point a hostname at it.
 // Streams to the UI the same way an app update does.
 let cfCreating = false;
@@ -1481,6 +1588,7 @@ function shutdown() {
   // Belt and braces: a surviving cloudflared would keep a public hostname
   // pointing at a port nothing is listening on any more.
   for (const t of tunnels.values()) if (t.pid) killPid(t.pid);
+  if (cfSetupProc) killPid(cfSetupProc.pid);
   setTimeout(() => process.exit(0), 800);
 }
 process.on("SIGINT", shutdown);
