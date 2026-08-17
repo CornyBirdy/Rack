@@ -18,6 +18,7 @@
           <div class="settings-title">Controller</div>
           <button id="btn-theme" class="menu-item">◐ <span>Theme</span></button>
           <button id="btn-boot" class="menu-item">⏻ <span>Run on boot: off</span></button>
+          <button id="btn-cf" class="menu-item">☁ <span>Set up Cloudflare</span></button>
           <button id="btn-sdk" class="menu-item">⧉ <span>Copy SDK prompt</span></button>
           <button id="btn-update-rack" class="menu-item" hidden>⟳ <span>Update Rack</span></button>
           <button id="btn-version" class="settings-version" title="View changelog">Rack v0.4</button>
@@ -212,15 +213,22 @@
     <div class="modal">
       <h3>Set up Cloudflare</h3>
       <p class="muted">
-        Named tunnels need a Cloudflare account and a domain on Cloudflare. Run these once, by
-        hand, in a terminal — the login opens a browser and writes credentials to
-        <code>~/.cloudflared</code>, so Rack doesn't do it for you.
+        Publish a process on a permanent hostname of your own domain. Needs a Cloudflare account
+        and a domain on Cloudflare. Run these once, by hand, in a terminal — the login opens a
+        browser and writes credentials to <code>~/.cloudflared</code>, so Rack doesn't do it for
+        you. Click a command to copy it.
       </p>
       <ol class="cf-steps">
-        <li><code id="cf-step-install">winget install --id Cloudflare.cloudflared</code></li>
-        <li><code>cloudflared tunnel login</code> <span class="muted">— pick your domain in the browser</span></li>
+        <li id="cf-step-1">
+          Install cloudflared<br />
+          <code id="cf-step-install">winget install --id Cloudflare.cloudflared</code>
+        </li>
+        <li id="cf-step-2">
+          Log in and pick your domain in the browser<br />
+          <code>cloudflared tunnel login</code>
+        </li>
       </ol>
-      <p class="muted">Then reopen this dropdown — Rack re-checks every 30 seconds.</p>
+      <p id="cf-setup-state" class="muted"></p>
       <div class="modal-actions">
         <button id="cf-setup-close" class="btn btn-ghost">Close</button>
       </div>

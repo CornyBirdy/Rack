@@ -8,6 +8,10 @@
 - **＋ New tunnel…** creates the tunnel and its DNS record for you and shows the
   live `cloudflared` output. Installing cloudflared and `cloudflared tunnel
   login` stay manual — that login is a browser flow Rack won't drive.
+- **Set up Cloudflare** in the ⚙ menu walks you through those two commands
+  (click one to copy it) and ticks each off as it's done. The per-process
+  dropdown stays hidden until cloudflared exists, so this is where you find the
+  feature before it's installed. Reads **Cloudflare: ready** once you're set up.
 - Rack runs `cloudflared` itself, so a tunnel is always torn down with the
   process it publishes — no public URL left answering 502s.
 - **auto** checkbox per process: bring the tunnel up whenever the process runs.

@@ -133,6 +133,11 @@ winget install --id Cloudflare.cloudflared
 cloudflared tunnel login
 ```
 
+Open **⚙ → Set up Cloudflare** for both commands (click one to copy it); it
+ticks each step off as you finish it and reads **Cloudflare: ready** when you're
+done. Cloudflare stays out of the per-process Public dropdown until cloudflared
+is installed, so the ⚙ menu is where the feature lives until then.
+
 The login opens a browser and writes credentials to `~/.cloudflared` — Rack
 points you at it but never drives it. After that, pick **＋ New tunnel…** in the
 Public dropdown, give it a name and a hostname, and Rack runs

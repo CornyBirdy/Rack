@@ -553,8 +553,24 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   padding-left: 9px;
 }
 .cf-warn code { display: block; margin-top: 4px; font-size: 0.74rem; }
-.cf-steps { margin: 6px 0 0; padding-left: 20px; font-size: 0.85rem; line-height: 1.9; }
-.cf-steps code { user-select: all; }
+.cf-steps { margin: 6px 0 0; padding-left: 20px; font-size: 0.85rem; line-height: 1.6; }
+.cf-steps li { margin-bottom: 10px; }
+.cf-steps code {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  font-family: Consolas, monospace;
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: all;
+}
+.cf-steps code:hover { border-color: var(--accent); color: var(--accent); }
+.cf-steps li.done { color: var(--fg-muted); }
+.cf-steps li.done::marker { content: "✓ "; color: var(--green); }
+.cf-steps li.done code { opacity: 0.6; }
 #cf-log, #cf-log-body { max-height: 220px; margin-top: 10px; }
 .det-links .btn-link { padding: 5px 10px; font-size: 0.8rem; }
 .btn-danger-ghost { margin-top: 14px; }
