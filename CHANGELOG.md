@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.7
+- **Drag apps around the sidebar** — reorder them inside a group, or drop one on
+  a category header to move it there. The header's category opens on drop so you
+  can see where the app landed.
+- A **no category** strip appears at the top of the list while you drag, for
+  taking an app back out of its category.
+- **Drag a category header** to move the whole group, apps and all.
+  Uncategorized apps stay pinned at the top.
+- The order is saved in `apps.json` (new `POST /api/apps/reorder`), so it
+  survives a restart and looks the same in every browser.
+- **Filter box** above the app list — matches app names, categories and process
+  names. **/** or Ctrl+K jumps to it, **Enter** opens the first match, **Esc**
+  clears it. Collapsed categories open while filtering, and dragging is off
+  because a filtered list isn't the real order.
+
 ## v0.6
 - **Cloudflare Tunnel** — publish a process on a permanent hostname of your own
   domain (`app.example.com`), not just a Tailscale address.

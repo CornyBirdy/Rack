@@ -212,12 +212,52 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 .logo { color: var(--accent); font-size: 1.3rem; }
 
+/* filter box */
+.app-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+.app-filter:focus-within { border-color: var(--accent); }
+.app-filter .filter-icon { color: var(--fg-muted); font-size: 0.95rem; }
+.app-filter input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.88rem;
+  outline: none;
+}
+.filter-clear {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 2px;
+  line-height: 1;
+}
+.filter-clear:hover { color: var(--fg); }
+
 .app-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.list-empty {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  padding: 8px 6px;
+  margin: 0;
 }
 
 .app-item {
@@ -285,6 +325,32 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   padding: 0 7px;
   font-size: 0.68rem;
 }
+
+/* drag & drop: reorder apps, move them between categories, reorder categories */
+.app-list.dragging .app-item,
+.app-list.dragging .cat-header { cursor: grabbing; }
+.app-item.dragging-item { opacity: 0.4; }
+.app-item.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.app-item.drop-after { box-shadow: 0 2px 0 var(--accent); }
+.cat-header.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.cat-header.drop-after { box-shadow: 0 2px 0 var(--accent); }
+.cat-header.drop-into {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+.uncat-zone {
+  padding: 6px;
+  border: 1px dashed var(--fg-muted);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.uncat-zone.drop-into { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
 .add-app-btn {
   padding: 10px;

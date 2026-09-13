@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execSync } = require("child_process");
 
-const VERSION = "0.6";
+const VERSION = "0.7";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -727,6 +727,28 @@ const server = http.createServer(async (req, res) => {
       const portInfo = resolvePorts();
       broadcast({ type: "apps" });
       return sendJSON(res, 200, { app: stateOf(result.app), portInfo });
+    }
+
+    // POST /api/apps/reorder  {order:[{id, category}]}  — sidebar drag & drop
+    if (parts[1] === "apps" && parts[2] === "reorder" && req.method === "POST") {
+      const body = await readBody(req);
+      const wanted = Array.isArray(body.order) ? body.order : [];
+      const byId = new Map(apps.map((a) => [a.id, a]));
+      const seen = new Set();
+      const next = [];
+      for (const entry of wanted) {
+        const a = entry && byId.get(entry.id);
+        if (!a || seen.has(a.id)) continue;
+        seen.add(a.id);
+        if ("category" in entry) a.category = String(entry.category || "").trim() || null;
+        next.push(a);
+      }
+      // an app the client didn't know about (added mid-drag) keeps its place at the end
+      for (const a of apps) if (!seen.has(a.id)) next.push(a);
+      apps = next;
+      saveApps();
+      broadcast({ type: "apps" });
+      return sendJSON(res, 200, { apps: apps.map(stateOf) });
     }
 
     const app = apps.find((a) => a.id === parts[2]);

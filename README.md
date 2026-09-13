@@ -67,11 +67,34 @@ you just point Rack at the folder.
 
 The prompt lives in `SDK-PROMPT.md`, so you can tweak it without touching code.
 
-## Categories
+## Organizing the sidebar
+
+### Categories
 
 Give an app a **Category** (in the editor) and the sidebar groups apps under
 collapsible headers, like a Discord channel list. Apps with no category sit at
 the top. Collapse state is remembered per browser.
+
+### Drag to arrange
+
+**Drag an app** to put it where you want it: up or down inside its group, or
+onto another category's header to move it there (a collapsed category opens so
+you can see where it landed). While you drag, a **no category** strip appears at
+the top of the list — drop an app there to take its category off again.
+
+**Drag a category header** to move the whole group, apps and all. Uncategorized
+apps stay pinned at the top.
+
+The order you arrange is the order Rack saves in `apps.json`, so it survives a
+restart and is the same in every browser.
+
+### Filter
+
+The box above the list filters apps as you type, matching the app name, its
+category, and its process names — so typing `pocketbase` finds every app with a
+PocketBase console. Press **/** (or Ctrl+K) from anywhere to jump to it,
+**Enter** to open the first match, and **Esc** to clear. Categories expand while
+you're filtering, and dragging is off — the order you see isn't the whole list.
 
 ## Controller settings (⚙)
 

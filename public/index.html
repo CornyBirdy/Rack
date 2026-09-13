@@ -21,8 +21,14 @@
           <button id="btn-cf" class="menu-item">☁ <span>Set up Cloudflare</span></button>
           <button id="btn-sdk" class="menu-item">⧉ <span>Copy SDK prompt</span></button>
           <button id="btn-update-rack" class="menu-item" hidden>⟳ <span>Update Rack</span></button>
-          <button id="btn-version" class="settings-version" title="View changelog">Rack v0.4</button>
+          <button id="btn-version" class="settings-version" title="View changelog">Rack v0.7</button>
         </div>
+      </div>
+      <div class="app-filter">
+        <span class="filter-icon" aria-hidden="true">⌕</span>
+        <input id="app-filter" type="text" placeholder="Filter apps" autocomplete="off" spellcheck="false"
+               title="Filter apps by name, category or process — press / to jump here" />
+        <button id="filter-clear" class="filter-clear" title="Clear filter (Esc)" hidden>✕</button>
       </div>
       <nav id="app-list" class="app-list"></nav>
       <button id="add-app-btn" class="add-app-btn">+ Add app</button>
