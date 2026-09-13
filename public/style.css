@@ -133,6 +133,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 .menu-item:hover { background: var(--accent-soft); }
 .menu-item.on { color: var(--green); }
+.menu-item.alert { color: var(--accent); font-weight: 600; }
 .settings-version {
   display: block;
   width: 100%;
@@ -295,6 +296,16 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 .dot.running { background: var(--green); }
 .auto-badge { font-size: 0.72rem; flex-shrink: 0; opacity: 0.85; }
+/* an app with new commits waiting to be pulled */
+.upd-badge {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 99px;
+  padding: 2px 4px;
+}
 
 /* collapsible category headers (Discord-style) */
 .cat-header {
@@ -533,6 +544,28 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   border-radius: 8px;
   padding: 8px 11px;
 }
+/* "is there a new version?" line in the details card */
+.upd-note {
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+.upd-note.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.upd-note ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: Consolas, monospace;
+  font-size: 0.78rem;
+}
+.upd-note .muted { color: inherit; opacity: 0.8; }
+.btn.has-update { border-color: var(--accent); color: var(--accent); }
+
 .setup-note code {
   background: rgba(0, 0, 0, 0.18);
   padding: 1px 6px;

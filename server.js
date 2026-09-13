@@ -7,9 +7,9 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { spawn, exec, execSync } = require("child_process");
+const { spawn, exec, execFile, execSync } = require("child_process");
 
-const VERSION = "0.7";
+const VERSION = "0.8";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -394,9 +394,143 @@ function rebuildStepFor(app) {
   return null;
 }
 
-// Run an app's update sequence (update command, then rebuild) and stream the
-// output to the UI via SSE. A failed step skips the rest.
+/* ------------------------------------------------------------------- git */
+
+// Small git wrappers. The sync one is only ever used for local, instant
+// questions (what commit is checked out?); anything that talks to a remote goes
+// through gitAsync so a slow network can't freeze the dashboard.
+// A check must never sit waiting on a credential prompt nobody can see.
+const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" };
+function gitSync(dir, args) {
+  try {
+    return execSync(`git ${args.join(" ")}`, {
+      cwd: dir,
+      windowsHide: true,
+      env: GIT_ENV,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return "";
+  }
+}
+function gitAsync(dir, args, timeout = 45000) {
+  return new Promise((resolve) => {
+    execFile("git", args, { cwd: dir, timeout, windowsHide: true, env: GIT_ENV }, (err, stdout, stderr) =>
+      resolve({
+        ok: !err,
+        out: String(stdout || "").trim(),
+        error: err ? String(stderr || "").trim() || err.message : null,
+      })
+    );
+  });
+}
+const gitHeadIn = (dir) => gitSync(dir, ["rev-parse", "HEAD"]);
+const isGitRepo = (dir) => gitSync(dir, ["rev-parse", "--is-inside-work-tree"]) === "true";
+
+// Ask the remote whether there's anything new, without changing the checkout.
+// Returns { repo, behind, ahead, commits, ... } — `behind` is what "an update is
+// available" means: commits on the upstream branch we don't have yet.
+async function checkGit(dir) {
+  if (!dir || !fs.existsSync(dir)) return { repo: false, reason: "folder not found" };
+  if (!isGitRepo(dir)) return { repo: false, reason: "not a git checkout" };
+
+  const fetched = await gitAsync(dir, ["fetch", "--quiet"]);
+  const upstream = await gitAsync(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  if (!upstream.ok) {
+    return { repo: true, error: "this branch isn't tracking a remote branch", head: gitHeadIn(dir).slice(0, 7) };
+  }
+  const count = await gitAsync(dir, ["rev-list", "--left-right", "--count", "HEAD...@{u}"]);
+  const [ahead, behind] = count.ok ? count.out.split(/\s+/).map(Number) : [0, 0];
+  const log = behind ? await gitAsync(dir, ["log", "--pretty=%h %s", "-5", "HEAD..@{u}"]) : null;
+  return {
+    repo: true,
+    head: gitHeadIn(dir).slice(0, 7),
+    upstream: upstream.out,
+    ahead: ahead || 0,
+    behind: behind || 0,
+    commits: log && log.ok ? log.out.split(/\r?\n/).filter(Boolean) : [],
+    // a failed fetch still reports the last known state, but says it may be stale
+    error: fetched.ok ? null : `couldn't reach the remote: ${firstLine(fetched.error)}`,
+  };
+}
+const firstLine = (s) => String(s || "").split(/\r?\n/).filter(Boolean)[0] || "";
+
+/* --------------------------------------------------- "check for updates" */
+
+// Cached answer to "is there anything new?", for Rack itself and every app that
+// has an update command. Refreshed on demand (⟲ Check for updates), a while
+// after boot, every few hours, and after an update runs.
+const AUTO_CHECK_MS = 6 * 60 * 60 * 1000;
+let updateStatus = { checking: false, checkedAt: 0, rack: null, apps: {} };
+let checkTimer = null;
+
+function updateStatusFor(app) {
+  return updateStatus.apps[app.id] || null;
+}
+
+async function checkUpdates() {
+  if (updateStatus.checking) return updateStatus;
+  updateStatus.checking = true;
+  broadcast({ type: "updates" });
+  try {
+    updateStatus.rack = await checkGit(ROOT);
+    const found = {};
+    for (const a of apps) {
+      // Nothing to apply without an update command, so nothing worth reporting.
+      found[a.id] = a.update ? await checkGit(appDir(a)) : { repo: false, reason: "no update command" };
+    }
+    updateStatus.apps = found;
+    updateStatus.checkedAt = Date.now();
+  } finally {
+    updateStatus.checking = false;
+    broadcast({ type: "updates" });
+  }
+  return updateStatus;
+}
+
+// Re-check shortly after something changed the picture (an update ran, an app
+// was added), coalescing a burst of changes into one pass.
+function checkUpdatesSoon(delay = 3000) {
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(() => checkUpdates().catch(() => {}), delay);
+}
+
+function updatesPayload() {
+  return {
+    checking: updateStatus.checking,
+    checkedAt: updateStatus.checkedAt || null,
+    rack: { version: VERSION, supervised: SUPERVISED, ...(updateStatus.rack || {}) },
+    apps: apps.map((a) => ({
+      id: a.id,
+      name: a.name,
+      canUpdate: !!(a.update || rebuildStepFor(a)),
+      ...(updateStatus.apps[a.id] || {}),
+    })),
+  };
+}
+
+/* ---------------------------------------------------------- app updates */
+
+// Run an app's update sequence and stream the output to the UI via SSE:
+//
+//   update command → (only if it actually brought new code) rebuild → restart
+//
+// The app keeps running through the update command — it's only stopped once
+// there's something to build or restart, so a "nothing to pull" update leaves a
+// running app completely alone.
 const updateProcs = new Map();
+
+// Stopping is asynchronous (taskkill), so wait for the processes to really be
+// gone: building over files they still hold open fails, and starting over a
+// live slot would be a silent no-op.
+function waitStopped(app, cb, tries = 0) {
+  if (!slotsFor(app).some((s) => s.proc)) return cb(true);
+  if (tries >= 40) return cb(false); // ~10s
+  setTimeout(() => waitStopped(app, cb, tries + 1), 250);
+}
+
 function updateApp(app) {
   if (updateProcs.get(app.id)) return { ok: false, error: "An update is already running." };
   const rebuild = rebuildStepFor(app);
@@ -404,85 +538,118 @@ function updateApp(app) {
 
   const dir = appDir(app);
   const emit = (stream, line) => broadcast({ type: "update-log", id: app.id, stream, line });
-  const steps = [];
-  if (app.update) steps.push({ tag: "update", cmd: app.update, label: app.update });
-  if (rebuild) steps.push({ tag: "rebuild", cmd: rebuild.cmd, label: rebuild.label });
+  const wasRunning = slotsFor(app).some((s) => s.proc);
+  updateProcs.set(app.id, true); // claim the slot before the first spawn
 
-  // A build can't overwrite files the running app still holds open, so stop it
-  // first and bring it back once the build succeeds.
-  const wasRunning = !!rebuild && slotsFor(app).some((s) => s.proc);
-  if (wasRunning) {
-    emit("out", "[update] stopping the app first — it restarts after the rebuild");
-    stopApp(app);
-  }
-
-  const finish = (code) => {
-    const done = (restarted) => {
-      updateProcs.delete(app.id);
-      emit("out", `[update] finished (exit code ${code})`);
-      broadcast({ type: "update-done", id: app.id, code, restarted });
-    };
-    if (!wasRunning || code !== 0) return done(false);
-    emit("out", "[update] restarting the app...");
-    // Stopping is asynchronous (taskkill), so wait for the old processes to
-    // actually be gone — starting over a live slot would be a silent no-op.
-    const restart = (tries = 0) => {
-      if (slotsFor(app).some((s) => s.proc)) {
-        if (tries < 40) return setTimeout(() => restart(tries + 1), 250);
-        emit("err", "[update] the app hasn't stopped — start it by hand.");
-        return done(false);
-      }
-      const r = startApp(app);
-      if (!r.ok) emit("err", `[update] restart failed: ${r.error}`);
-      done(r.ok);
-    };
-    restart();
+  const done = (code, changed, restarted) => {
+    updateProcs.delete(app.id);
+    emit("out", `[update] finished (exit code ${code})`);
+    broadcast({ type: "update-done", id: app.id, code, changed, restarted });
+    if (code === 0) checkUpdatesSoon(); // the badge is stale either way now
   };
 
-  const runStep = (i) => {
-    const step = steps[i];
-    const next = steps[i + 1];
-    emit("out", `[${step.tag}] ${step.label}   (in ${dir})`);
+  const runStep = (tag, cmd, label, onExit) => {
+    emit("out", `[${tag}] ${label}   (in ${dir})`);
     let proc;
     try {
-      proc = spawn(step.cmd, { cwd: dir, windowsHide: true, shell: true });
+      proc = spawn(cmd, { cwd: dir, windowsHide: true, shell: true });
     } catch (e) {
-      emit("err", `[${step.tag}] error: ${e.message}`);
-      return finish(1);
+      emit("err", `[${tag}] error: ${e.message}`);
+      return onExit(1);
     }
     updateProcs.set(app.id, proc);
     const pump = (stream) => (d) =>
-      d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => emit(stream, l));
+      d
+        .toString()
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .forEach((l) => {
+          if (tag === "update" && /already up[- ]to[- ]date/i.test(l)) proc.sawUpToDate = true;
+          emit(stream, l);
+        });
     proc.stdout.on("data", pump("out"));
     proc.stderr.on("data", pump("err"));
-    proc.on("error", (e) => emit("err", `[${step.tag}] error: ${e.message}`));
-    proc.on("exit", (code) => {
-      if (code !== 0) {
-        if (next) emit("err", `[${step.tag}] failed — skipping ${next.tag}.`);
-        return finish(code);
+    proc.on("error", (e) => emit("err", `[${tag}] error: ${e.message}`));
+    proc.on("exit", (code) => onExit(code, !!proc.sawUpToDate));
+  };
+
+  const restart = (code, changed) => {
+    if (!wasRunning) return done(code, changed, false);
+    emit("out", "[update] restarting the app...");
+    waitStopped(app, (gone) => {
+      if (!gone) {
+        emit("err", "[update] the app hasn't stopped — start it by hand.");
+        return done(code, changed, false);
       }
-      if (next) return runStep(i + 1);
-      finish(code);
+      const r = startApp(app);
+      if (!r.ok) emit("err", `[update] restart failed: ${r.error}`);
+      done(code, changed, r.ok);
     });
   };
 
-  updateProcs.set(app.id, true); // claim the slot before the first spawn
-  runStep(0);
+  // New code is in the folder: build it if there's a build step, then make sure
+  // the app is actually running the new code rather than the old one.
+  const applyNewCode = (changed) => {
+    if (!rebuild) {
+      if (!wasRunning) return done(0, changed, false);
+      emit("out", "[update] new code — restarting the app so it picks it up");
+      stopApp(app);
+      return restart(0, changed);
+    }
+    if (wasRunning) {
+      emit("out", "[update] stopping the app — a build can't overwrite files it holds open");
+      stopApp(app);
+    }
+    waitStopped(app, (gone) => {
+      if (!gone) {
+        emit("err", "[update] the app hasn't stopped — skipping the rebuild.");
+        return done(1, changed, false);
+      }
+      runStep("rebuild", rebuild.cmd, rebuild.label, (code) => {
+        if (code !== 0) {
+          emit("err", "[rebuild] failed — the app stays stopped, so you never run half-built code.");
+          return done(code, changed, false);
+        }
+        restart(0, changed);
+      });
+    });
+  };
+
+  // A rebuild asked for on its own always runs — there's no update to compare.
+  if (!app.update) {
+    applyNewCode(true);
+    return { ok: true };
+  }
+
+  const headBefore = gitHeadIn(dir);
+  runStep("update", app.update, app.update, (code, sawUpToDate) => {
+    if (code !== 0) {
+      // The app was never stopped, so a failed update leaves it exactly as it was.
+      emit("err", `[update] failed (code ${code}) — nothing was built or restarted.`);
+      return done(code, false, false);
+    }
+    // In a git checkout the commit itself is the answer; elsewhere fall back to
+    // what the command said, and assume new code if it said nothing.
+    const changed = headBefore ? headBefore !== gitHeadIn(dir) : !sawUpToDate;
+    if (!changed) {
+      emit("out", `[update] already up to date — skipping ${rebuild ? rebuild.label : "the restart"}.`);
+      return done(0, false, false);
+    }
+    if (headBefore) emit("out", `[update] new code: ${headBefore.slice(0, 7)} → ${gitHeadIn(dir).slice(0, 7)}`);
+    applyNewCode(true);
+  });
   return { ok: true };
 }
 
 // Update Rack itself: `git pull` in ROOT, and if new code arrived, restart via
 // the supervisor (exit 42). Running apps are remembered and brought back after.
 let selfUpdating = false;
-function gitHead() {
-  try { return execSync("git rev-parse HEAD", { cwd: ROOT }).toString().trim(); } catch { return ""; }
-}
 function selfUpdate() {
   if (!SUPERVISED) return { ok: false, error: "Launch Rack via start.bat to enable one-click update." };
   if (selfUpdating) return { ok: false, error: "An update is already running." };
   selfUpdating = true;
   const emit = (stream, line) => broadcast({ type: "self-update-log", stream, line });
-  const before = gitHead();
+  const before = gitHeadIn(ROOT);
   emit("out", "[update] git pull");
   const proc = spawn("git pull", { cwd: ROOT, windowsHide: true, shell: true });
   const pump = (s) => (d) => d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => emit(s, l));
@@ -495,9 +662,10 @@ function selfUpdate() {
       emit("err", `[update] git pull failed (code ${code}).`);
       return broadcast({ type: "self-update-done", ok: false });
     }
-    if (before && before === gitHead()) {
+    if (before && before === gitHeadIn(ROOT)) {
       selfUpdating = false;
       emit("out", "[update] Already up to date.");
+      checkUpdatesSoon();
       return broadcast({ type: "self-update-done", ok: true, changed: false });
     }
     emit("out", "[update] Updated — restarting Rack...");
@@ -725,6 +893,7 @@ const server = http.createServer(async (req, res) => {
       if (result.error) return sendJSON(res, 400, { error: result.error });
       apps.push(result.app);
       const portInfo = resolvePorts();
+      if (result.app.update) checkUpdatesSoon();
       broadcast({ type: "apps" });
       return sendJSON(res, 200, { app: stateOf(result.app), portInfo });
     }
@@ -762,7 +931,11 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.name === "string" && body.name.trim()) app.name = body.name.trim();
       if ("category" in body) app.category = (String(body.category || "").trim()) || null;
       if ("autostart" in body) app.autostart = !!body.autostart;
-      if ("update" in body) app.update = (String(body.update || "").trim()) || null;
+      if ("update" in body) {
+        const next = String(body.update || "").trim() || null;
+        if (next !== app.update) checkUpdatesSoon();
+        app.update = next;
+      }
       if ("rebuild" in body) app.rebuild = (String(body.rebuild || "").trim()) || null;
       if (Array.isArray(body.commands)) {
         const rebuilt = [];
@@ -907,6 +1080,17 @@ const server = http.createServer(async (req, res) => {
     // GET /api/version  → version + whether one-click self-update is available
     if (parts[1] === "version" && req.method === "GET") {
       return sendJSON(res, 200, { version: VERSION, supervised: SUPERVISED });
+    }
+
+    // GET /api/updates  → last known "is there anything new?" for Rack + apps
+    if (parts[1] === "updates" && !parts[2] && req.method === "GET") {
+      return sendJSON(res, 200, updatesPayload());
+    }
+
+    // POST /api/updates/check  — ask every remote now (git fetch), then report
+    if (parts[1] === "updates" && parts[2] === "check" && req.method === "POST") {
+      await checkUpdates();
+      return sendJSON(res, 200, updatesPayload());
     }
 
     // POST /api/self-update  — git pull Rack itself and restart if changed
@@ -1598,6 +1782,9 @@ server.listen(CONTROL_PORT, () => {
       }
     }
   } catch {}
+  // Look for updates once the dashboard has settled, then a few times a day.
+  checkUpdatesSoon(20000);
+  setInterval(() => checkUpdates().catch(() => {}), AUTO_CHECK_MS).unref();
 });
 
 /* ------------------------------------------------- clean shutdown of children */

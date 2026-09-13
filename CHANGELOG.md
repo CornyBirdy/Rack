@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.8
+- **⟳ Update only rebuilds when there's actually something new.** Rack compares
+  the checked-out commit before and after the update command; if nothing moved,
+  the rebuild and the restart are skipped and the log says *already up to date*.
+  Outside a git checkout it falls back to what the command printed.
+- **An update that brings new code now restarts the app** even when there's no
+  rebuild step — previously a plain `git pull` left the old code running.
+- **The app isn't stopped until there's a reason to stop it.** The update
+  command runs while the app is up, so a "nothing to pull" update no longer
+  interrupts anything, and a *failed* update leaves the app running instead of
+  stopping it and never bringing it back.
+- Before a rebuild, Rack now waits for the app's processes to really be gone —
+  a build can't overwrite files they still hold open.
+- **⟲ Check for updates** in the ⚙ menu — one `git fetch` per repo tells you
+  what's behind without running anything: Rack itself and every app with an
+  update command.
+  - Apps with new commits get a **⟳** badge in the sidebar; the ⟳ Update button
+    reads *Update — 3 new*; the details card lists the incoming commit subjects.
+  - The menu item summarizes ("Update available: Rack + 2 apps") and, when
+    everything is current, says when it last checked.
+  - Runs on its own 20s after Rack starts, every 6 hours, and after any update.
+  - Checks can't hang on a credential prompt (`GIT_TERMINAL_PROMPT=0`, 45s cap)
+    and a repo that can't be reached reports the reason instead of failing
+    silently.
+- New endpoints: `GET /api/updates`, `POST /api/updates/check`.
+
 ## v0.7
 - **Drag apps around the sidebar** — reorder them inside a group, or drop one on
   a category header to move it there. The header's category opens on drop so you

@@ -108,6 +108,36 @@ clear what acts on the controller vs. the selected app.
   to have that app come up on its own — so after a reboot, your usual apps are
   back. Apps show a ⚡ badge in the sidebar when auto-start is on.
 
+## Checking for updates (⚙ → ⟲ Check for updates)
+
+Rack can tell you what's out of date **without running anything**. It does a
+`git fetch` in Rack's own folder and in every app that has an update command,
+then compares your checkout against the branch it tracks:
+
+- Apps with new commits get a **⟳** badge in the sidebar, and their **⟳ Update**
+  button reads **Update — 3 new**.
+- The app's details card lists the incoming commit subjects, so you can see
+  what's coming before you pull.
+- The menu item itself summarizes — *Update available: Rack + 2 apps*, or *Up to
+  date · checked 5m ago*.
+
+It also checks on its own: 20 seconds after Rack starts, every 6 hours, and
+after any update runs. Nothing is ever pulled by a check — it only looks.
+
+An app whose folder isn't a git checkout says so (Rack can't know what a custom
+update script will do); press **⟳ Update** to find out. A repo it can't reach —
+no network, credentials needed — reports that instead of hanging: checks can't
+raise a password prompt and give up after 45 seconds.
+
+## Updating Rack itself (⚙ → ⟳ Update Rack)
+
+**⟳ Update Rack** pulls Rack's own repo and restarts the controller, bringing
+back whatever was running before. When there are new commits waiting it reads
+**Update Rack — 3 new**. It needs Rack to have been started from **start.bat**,
+whose supervisor loop is what relaunches it; started any other way the item is
+hidden and you update with a `git pull` in Rack's folder. A pull with nothing in
+it just says you're already on the latest version.
+
 ## Updating a deployed app (⟳ Update)
 
 Give an app an **Update command** (in the editor, e.g. `git pull`) and a **⟳
@@ -115,12 +145,25 @@ Update** button appears. Click it to fetch a new version and watch the output
 stream live. Because machine-specific state (`.env`, databases, build output) is
 git-ignored, an update only changes code — your data stays put.
 
-**Apps that need compiling** get a second step for free: if the app's folder has
-a **`rebuild.bat`**, Rack runs it right after the update, in the same log. Since
-a build can't overwrite files a running server is holding open, Rack stops the
-app before building and starts it again once the build succeeds — so one click
-is pull → build → back up. A failed pull skips the build, and a failed build
-leaves the app stopped so you never run half-built code.
+**Nothing new? Nothing happens.** Rack compares the commit before and after the
+update command, and if the checkout didn't move it skips the rebuild and the
+restart and says *already up to date* — a pointless build never runs, and a
+running app is never interrupted. (Outside a git checkout Rack goes by what the
+command printed, and assumes new code if it can't tell.)
+
+**New code always ends up running.** If the app was up when the update brought
+something new, Rack restarts it onto the new version — with or without a build
+step.
+
+**Apps that need compiling** get that build for free: if the app's folder has a
+**`rebuild.bat`**, Rack runs it right after the update, in the same log. A build
+can't overwrite files a running server holds open, so Rack stops the app first,
+waits for its processes to actually exit, builds, then starts it again — one
+click is pull → build → back up.
+
+The update command itself runs with the app still up, so a **failed update
+leaves the app exactly as it was**, still running. A failed *build* leaves the
+app stopped, so you never run half-built code.
 
 Fill in **Rebuild command** in the editor to point at a different build command,
 or type `off` to skip the rebuild entirely.
