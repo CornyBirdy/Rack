@@ -152,13 +152,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 
 /* sdk prompt */
 .sdk-hint {
-  margin: -4px 0 0;
-  font-size: 0.82rem;
+  margin: 0;
+  font-size: 0.8rem;
   color: var(--fg-muted);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  padding: 8px 11px;
   line-height: 1.45;
 }
 .linkish {
@@ -857,9 +853,77 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   gap: 8px;
   background: var(--bg);
 }
-.proc-row-top { display: flex; gap: 8px; align-items: center; }
-.proc-row-top .proc-name { flex: 1; font-weight: 600; }
-.proc-row-grid { display: grid; grid-template-columns: 1fr 130px; gap: 8px; }
-.proc-remove { padding: 6px 10px; align-self: center; }
+.proc-line { display: flex; gap: 8px; align-items: center; }
+.proc-line .proc-path { flex: 1; min-width: 0; }
+.proc-line .proc-port { width: 84px; flex: none; }
+.proc-extra { display: flex; flex-direction: column; gap: 8px; }
+.proc-extra[hidden] { display: none; }
+.proc-more, .proc-remove { padding: 6px 10px; flex: none; }
 .modal-wide input { font-weight: normal; }
-.modal-wide .proc-row input { width: 100%; }
+.modal-wide .proc-extra input { width: 100%; }
+
+/* ---- app editor: two panes, one job each ---- */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.mode-tabs[hidden] { display: none; }
+.mode-tab {
+  flex: 1;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mode-tab:hover { color: var(--fg); }
+.mode-tab.on { background: var(--bg-panel); color: var(--fg); box-shadow: var(--shadow); }
+
+#pane-github,
+#pane-local {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#pane-github[hidden],
+#pane-local[hidden] { display: none; }
+
+.install-line { display: flex; gap: 8px; }
+.install-line input { flex: 1; min-width: 0; }
+.install-dest {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: -6px 0 0;
+  font-size: 0.8rem;
+}
+.install-dest .muted { white-space: nowrap; }
+.install-dest .linkish {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.advanced { border-top: 1px solid var(--border); padding-top: 12px; }
+.advanced summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+  list-style: none;
+}
+.advanced summary::-webkit-details-marker { display: none; }
+.advanced summary::before { content: "\25b8  "; }
+.advanced[open] summary::before { content: "\25be  "; }
+.advanced summary:hover { color: var(--fg); }
+.advanced > *:not(summary) { margin-top: 12px; }

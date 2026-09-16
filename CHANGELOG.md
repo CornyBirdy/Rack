@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.9
+- **Apps folder** (⚙ menu) — one folder where Rack keeps the apps you install.
+- **Install from GitHub** — paste a repo link into **+ Add app** and press
+  **Install**. Rack clones it into the apps folder, runs the repo's `setup` and
+  build steps, imports its `rack.json`, and the app appears in the sidebar
+  ready to run. Repos without a manifest still land as an app — Rack
+  auto-detects what to run, same as pointing at a folder.
+- Installed apps get `git pull` as their **⟳ Update** command automatically.
+- Full `https://` links, `git@host:owner/repo.git` and `owner/repo` shorthand
+  all work; a `/tree/<branch>` link clones that branch. An already-cloned
+  folder is imported instead of re-cloned.
+- **The Add app dialog stopped being a wall of fields.** It opens on two tabs —
+  *From GitHub* (link + Install, nothing else) and *From this PC* — a process is
+  one line (command + port) with name, arguments, working folder and stop
+  command behind ⋯, and autostart / update / rebuild behind **Advanced**.
+  Editing an app opens whichever of those it actually uses.
+- Fix: a manifest process with a **typed command** (`npm run start`) now runs in
+  the app's folder, as RACK-SDK documents — it used to run next to Rack.
+
 ## v0.8
 - **⟳ Update only rebuilds when there's actually something new.** Rack compares
   the checked-out commit before and after the update command; if nothing moved,

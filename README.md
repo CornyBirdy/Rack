@@ -11,10 +11,29 @@ Double-click **start.bat**. It starts the controller and opens the dashboard
 in your browser at http://localhost:7799. Closing the window kills the
 controller and every app it started.
 
-## Add an app
+## Install from GitHub
 
-Click **+ Add app**, give it a name, and add one or more **processes**. Each
-process is one of:
+Set your **apps folder** once (⚙ → **Apps folder**) — that's where Rack keeps
+the apps it installs. Then **+ Add app**, paste a repository link into
+**Install from GitHub**, and press **Install**:
+
+```
+https://github.com/owner/repo      owner/repo      git@github.com:owner/repo.git
+```
+
+Rack clones it into the apps folder, runs the repo's `setup` and build steps,
+imports its `rack.json` if it has one (see below), and adds the app — with
+`git pull` already set as its **⟳ Update** command. A `/tree/<branch>` link
+clones that branch; a repo you've already cloned there is imported instead of
+re-cloned. Needs `git` on your PATH.
+
+## Add an app by hand
+
+Click **+ Add app → From this PC**, give it a name, and add one or more
+**processes**. A process is one line — the command and, if it needs one, a port;
+**⋯** opens its console name, arguments, working folder and stop command, and
+**Advanced** holds autostart plus the update / rebuild commands. Each process is
+one of:
 
 - a **folder** (auto-picks `pocketbase.exe`, then a `start/run/launch` .bat,
   then a lone .exe),

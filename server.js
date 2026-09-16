@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execFile, execSync } = require("child_process");
 
-const VERSION = "0.8";
+const VERSION = "0.9";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -20,6 +20,7 @@ const CONTROL_PORT = portArg ? Number(portArg.split("=")[1]) : 7799;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const APPS_FILE = path.join(ROOT, "apps.json");
+const SETTINGS_FILE = path.join(ROOT, "settings.json");
 const RESTORE_FILE = path.join(ROOT, ".rack-restore.json");
 const MAX_LOG_LINES = 600;
 const BASE_APP_PORT = 8090;
@@ -102,6 +103,40 @@ function saveApps() {
   fs.writeFileSync(APPS_FILE, JSON.stringify(apps, null, 2));
 }
 loadApps();
+
+// Controller-wide, per-machine settings (currently just the apps folder that
+// "Install from GitHub" clones into). Gitignored, like apps.json.
+let settings = { appsDir: null };
+function loadSettings() {
+  try {
+    settings = { ...settings, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) };
+  } catch {}
+}
+function saveSettings() {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+loadSettings();
+
+// Point the controller at a folder to keep cloned apps in; it's created if it
+// doesn't exist yet. Blank clears the setting.
+function setAppsDir(input) {
+  const raw = (input || "").trim().replace(/^"|"$/g, "");
+  if (!raw) {
+    settings.appsDir = null;
+    saveSettings();
+    return { ok: true };
+  }
+  const dir = path.resolve(raw);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    return { ok: false, error: `Couldn't create ${dir}: ${e.message}` };
+  }
+  if (!fs.statSync(dir).isDirectory()) return { ok: false, error: `${dir} is not a folder.` };
+  settings.appsDir = dir;
+  saveSettings();
+  return { ok: true };
+}
 
 /* ---------------------------------------------------------- runtime state */
 
@@ -714,7 +749,9 @@ function resolveCommand(spec, baseDir) {
     // Not a real path — treat the text as a raw shell command (e.g. "npm run start").
     raw = true;
     exe = rawInput;
-    dir = ROOT;
+    // A manifest's typed command runs in the app's folder, as RACK-SDK documents;
+    // one typed into the dialog has no folder to inherit, so it runs next to Rack.
+    dir = baseDir ? path.resolve(baseDir) : ROOT;
   }
 
   // Optional working-folder override.
@@ -832,6 +869,184 @@ function resolveApp(spec) {
   if (spec.update != null) app.update = String(spec.update).trim() || null;
   if (spec.rebuild != null) app.rebuild = String(spec.rebuild).trim() || null;
   return { app };
+}
+
+/* ------------------------------------------------- install from a git URL */
+
+// Clone a repo into the apps folder and add it as an app: one paste, one app.
+
+let gitAvailable = null;
+function hasGit() {
+  if (gitAvailable == null) {
+    try {
+      execSync("git --version", { stdio: "ignore" });
+      gitAvailable = true;
+    } catch {
+      gitAvailable = false;
+    }
+  }
+  return gitAvailable;
+}
+
+// Turn whatever was pasted into { url, name, branch }: the clone URL, the folder
+// name to clone into, and a branch when the link points at one (.../tree/dev).
+// Accepts full https links, git@host:owner/repo.git, and owner/repo shorthand.
+function parseRepo(input) {
+  const s = (input || "").trim().replace(/^"|"$/g, "").replace(/\/+$/, "");
+  if (!s) return { error: "Paste a repository link." };
+  let url, name, branch = null;
+  if (/^[\w.-]+\/[\w.-]+$/.test(s)) {
+    url = `https://github.com/${s}.git`;
+    name = s.split("/")[1];
+  } else if (/^(git|ssh):\/\//i.test(s) || /^[\w.-]+@[\w.-]+:/.test(s)) {
+    url = s;
+    name = s.split(/[/:]/).pop();
+  } else if (/^https?:\/\//i.test(s)) {
+    let u;
+    try {
+      u = new URL(s);
+    } catch {
+      return { error: "That link isn't a valid URL." };
+    }
+    const seg = u.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
+    if (seg.length < 2) return { error: "That link doesn't point at a repository." };
+    if (seg[2] === "tree" && seg.length > 3) branch = seg.slice(3).join("/");
+    name = seg[1];
+    url = `${u.origin}/${seg[0]}/${name.replace(/\.git$/, "")}.git`;
+  } else {
+    return { error: "That doesn't look like a repository link." };
+  }
+  name = name.replace(/\.git$/, "");
+  if (!/^[\w.-]+$/.test(name) || name === "." || name === "..")
+    return { error: "Couldn't work out a folder name from that link." };
+  return { url, name, branch };
+}
+
+let installProc = null;
+let installing = false;
+
+// Clone, then (when the repo ships a rack.json) run its setup and build steps,
+// then register the app. All output streams to the UI over SSE.
+function installApp(body) {
+  if (installing) return { ok: false, error: "An install is already running." };
+  if (!settings.appsDir)
+    return { ok: false, error: "Set an apps folder first (gear menu > Apps folder)." };
+  if (!hasGit()) return { ok: false, error: "git isn't installed, or isn't on PATH." };
+
+  const base = settings.appsDir;
+  try {
+    fs.mkdirSync(base, { recursive: true });
+  } catch (e) {
+    return { ok: false, error: `Apps folder ${base} is missing and couldn't be created: ${e.message}` };
+  }
+
+  const repo = parseRepo(body.url);
+  if (repo.error) return { ok: false, error: repo.error };
+
+  const target = path.join(base, repo.name);
+  const cloned = fs.existsSync(target) && fs.readdirSync(target).length > 0;
+  if (cloned && !fs.existsSync(path.join(target, ".git")))
+    return { ok: false, error: `${target} already exists and isn't a clone — rename or remove it first.` };
+  if (apps.some((a) => a.commands.some((c) => c.dir === target)))
+    return { ok: false, error: `${repo.name} is already added — it lives in ${target}.` };
+
+  const emit = (stream, line) => broadcast({ type: "install-log", stream, line });
+  const finish = (ok, extra) => {
+    if (!installing) return;
+    installing = false;
+    installProc = null;
+    broadcast({ type: "install-done", ok, ...extra });
+  };
+
+  // Last step: import the clone — its rack.json when it has one, otherwise the
+  // same folder auto-detection the Add app dialog uses.
+  const register = () => {
+    const man = loadManifest(target);
+    // Without a manifest to name the app, the repo folder name beats the .bat we
+    // happened to find in it.
+    const r = man
+      ? buildFromManifest(target, man, body.name)
+      : resolveApp({ name: (body.name || "").trim() || repo.name, path: target });
+    if (r.error) {
+      emit("err", `[install] cloned to ${target}, but couldn't add it: ${r.error}`);
+      emit("err", "[install] add it by hand with + Add app, pointing at that folder.");
+      return finish(false, { error: r.error, dir: target });
+    }
+    const app = r.app;
+    if (!app.update) app.update = "git pull"; // it came from git — Update means pull
+    if (body.category) app.category = String(body.category).trim() || null;
+    if (body.autostart != null) app.autostart = !!body.autostart;
+    apps.push(app);
+    const portInfo = resolvePorts();
+    broadcast({ type: "apps" });
+    if (!man) emit("out", "[install] no rack.json in this repo — check the processes with Edit.");
+    emit("out", `[install] added "${app.name}" — ${app.commands.length} process(es).`);
+    finish(true, { app: stateOf(app), portInfo });
+  };
+
+  const runSteps = (list, i, done) => {
+    if (i >= list.length) return done();
+    const step = list[i];
+    emit("out", `[${step.tag}] ${step.cmd}   (in ${step.cwd})`);
+    let proc;
+    try {
+      proc = spawn(step.cmd, { cwd: step.cwd, windowsHide: true, shell: true });
+    } catch (e) {
+      emit("err", `[${step.tag}] ${e.message}`);
+      return finish(false, { error: e.message });
+    }
+    installProc = proc;
+    // git reports clone progress on stderr, so a red line here isn't a failure —
+    // only the exit code decides.
+    const pump = (stream) => (d) =>
+      d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => emit(stream, l));
+    proc.stdout.on("data", pump("out"));
+    proc.stderr.on("data", pump("err"));
+    proc.on("error", (e) => {
+      emit("err", `[${step.tag}] ${e.message}`);
+      finish(false, { error: e.message });
+    });
+    proc.on("exit", (code) => {
+      installProc = null;
+      if (code !== 0) {
+        emit("err", `[${step.tag}] failed (exit code ${code}).`);
+        return finish(false, { error: `${step.tag} failed (exit code ${code})` });
+      }
+      runSteps(list, i + 1, done);
+    });
+  };
+
+  // The manifest only exists once the clone lands, so the post-clone steps are
+  // worked out after it.
+  const afterClone = () => {
+    const man = loadManifest(target) || {};
+    const setup = man.setup ? (typeof man.setup === "string" ? man.setup : man.setup.command) : null;
+    const post = [];
+    if (setup) post.push({ tag: "setup", cmd: setup, cwd: target });
+    // A fresh clone usually has to be built before it can run; rebuildStepFor()
+    // takes the app's folder + rebuild setting, which is all we have so far.
+    const rb = rebuildStepFor({
+      commands: [{ dir: target }],
+      rebuild: man.rebuild == null ? null : man.rebuild === false ? "off" : String(man.rebuild),
+    });
+    if (rb) post.push({ tag: "build", cmd: rb.cmd, cwd: target });
+    runSteps(post, 0, register);
+  };
+
+  installing = true;
+  const steps = [];
+  if (cloned) {
+    emit("out", `[install] ${target} is already cloned — importing it.`);
+  } else {
+    const branch = repo.branch ? `-b ${JSON.stringify(repo.branch)} ` : "";
+    steps.push({
+      tag: "clone",
+      cmd: `git clone ${branch}--recurse-submodules "${repo.url}" "${target}"`,
+      cwd: base,
+    });
+  }
+  runSteps(steps, 0, afterClone);
+  return { ok: true, dir: target };
 }
 
 /* ------------------------------------------------------------- HTTP server */
@@ -1057,6 +1272,24 @@ const server = http.createServer(async (req, res) => {
     if (parts[1] === "cf" && parts[2] === "log" && req.method === "GET") {
       const t = tunnels.get(tKey(url.searchParams.get("app"), url.searchParams.get("cmd")));
       return sendJSON(res, 200, { log: t ? t.log : [] });
+    }
+
+    // GET /api/settings  → controller-wide settings   POST /api/settings {appsDir}
+    if (parts[1] === "settings" && req.method === "GET") {
+      return sendJSON(res, 200, { appsDir: settings.appsDir, git: hasGit() });
+    }
+    if (parts[1] === "settings" && req.method === "POST") {
+      const body = await readBody(req);
+      const r = "appsDir" in body ? setAppsDir(body.appsDir) : { ok: true };
+      if (!r.ok) return sendJSON(res, 400, { error: r.error });
+      return sendJSON(res, 200, { appsDir: settings.appsDir, git: hasGit() });
+    }
+
+    // POST /api/install  {url, name?, category?, autostart?}
+    //   Clone a repo into the apps folder and add it as an app.
+    if (parts[1] === "install" && req.method === "POST") {
+      const r = installApp(await readBody(req));
+      return sendJSON(res, r.ok ? 200 : 400, r);
     }
 
     // GET /api/sdk-prompt  → the copy-paste prompt for AI coding tools
@@ -1798,6 +2031,7 @@ function shutdown() {
   // pointing at a port nothing is listening on any more.
   for (const t of tunnels.values()) if (t.pid) killPid(t.pid);
   if (cfSetupProc) killPid(cfSetupProc.pid);
+  if (installProc) killPid(installProc.pid);
   setTimeout(() => process.exit(0), 800);
 }
 process.on("SIGINT", shutdown);

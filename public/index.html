@@ -17,6 +17,7 @@
         <div id="settings-menu" class="settings-menu" hidden>
           <div class="settings-title">Controller</div>
           <button id="btn-theme" class="menu-item">◐ <span>Theme</span></button>
+          <button id="btn-folder" class="menu-item">▤ <span>Apps folder</span></button>
           <button id="btn-boot" class="menu-item">⏻ <span>Run on boot: off</span></button>
           <button id="btn-cf" class="menu-item">☁ <span>Set up Cloudflare</span></button>
           <button id="btn-sdk" class="menu-item">⧉ <span>Copy SDK prompt</span></button>
@@ -55,6 +56,8 @@
         <strong>.exe</strong>, a <strong>.bat</strong>, or type a command like <code>npm run start</code>.
         PocketBase apps are detected automatically. If a folder has a
         <strong>rack.json</strong>, all its processes import in one click.</p>
+        <p>Already on GitHub? Paste the repo link into <strong>+ Add app → Install from GitHub</strong>
+        and Rack clones it into your apps folder and adds it for you.</p>
       </div>
 
       <div id="panel" class="panel" hidden>
@@ -115,39 +118,65 @@
   <div id="modal" class="modal-backdrop" hidden>
     <div class="modal modal-wide">
       <h3 id="modal-title">Add app</h3>
-      <p class="sdk-hint">
-        Building a new app? <button type="button" id="btn-sdk-2" class="linkish">Copy the SDK prompt</button>
-        and paste it into your AI coding tool — it makes the app Rack-ready.
-      </p>
-      <div class="modal-row2">
-        <label>
-          App name <span class="muted">(optional)</span>
-          <input id="inp-name" type="text" placeholder="My cool app" />
-        </label>
-        <label>
-          Category <span class="muted">(optional)</span>
-          <input id="inp-category" type="text" list="cat-list" placeholder="e.g. Work, Personal" />
-          <datalist id="cat-list"></datalist>
-        </label>
-      </div>
-      <label class="checkbox-row">
-        <input id="inp-autostart" type="checkbox" />
-        <span>Start automatically when the controller launches (e.g. on boot)</span>
-      </label>
-      <label>
-        Update command <span class="muted">(optional — shows a ⟳ Update button, e.g. git pull)</span>
-        <input id="inp-update" type="text" placeholder="git pull" />
-      </label>
-      <label>
-        Rebuild command <span class="muted">(runs after the update — blank auto-detects <code>rebuild.bat</code>, "off" disables)</span>
-        <input id="inp-rebuild" type="text" placeholder="rebuild.bat (auto)" />
-      </label>
 
-      <div class="proc-head">
-        <span>Processes <span class="muted">— each gets its own console</span></span>
+      <div id="mode-tabs" class="mode-tabs">
+        <button type="button" id="tab-github" class="mode-tab on">From GitHub</button>
+        <button type="button" id="tab-local" class="mode-tab">From this PC</button>
       </div>
-      <div id="proc-rows" class="proc-rows"></div>
-      <button id="add-proc" class="btn btn-ghost btn-sm">+ Add another process</button>
+
+      <!-- paste a repo link, press Install -->
+      <div id="pane-github">
+        <div class="install-line">
+          <input id="inp-repo" type="text" placeholder="https://github.com/owner/repo" />
+          <button type="button" id="btn-install" class="btn btn-run">⬇ Install</button>
+        </div>
+        <p class="install-dest">
+          <span class="muted">Clones into</span>
+          <button type="button" id="install-dir" class="linkish">not set</button>
+        </p>
+      </div>
+
+      <!-- something already on this machine -->
+      <div id="pane-local" hidden>
+        <div class="modal-row2">
+          <label>
+            App name <span class="muted">(optional)</span>
+            <input id="inp-name" type="text" placeholder="My cool app" />
+          </label>
+          <label>
+            Category <span class="muted">(optional)</span>
+            <input id="inp-category" type="text" list="cat-list" placeholder="e.g. Work, Personal" />
+            <datalist id="cat-list"></datalist>
+          </label>
+        </div>
+
+        <div class="proc-head">
+          <span>Processes <span class="muted">— each gets its own console; ⋯ for its options</span></span>
+        </div>
+        <div id="proc-rows" class="proc-rows"></div>
+        <button id="add-proc" class="btn btn-ghost btn-sm">+ Add another process</button>
+
+        <details id="advanced" class="advanced">
+          <summary>Advanced</summary>
+          <label class="checkbox-row">
+            <input id="inp-autostart" type="checkbox" />
+            <span>Start automatically when the controller launches (e.g. on boot)</span>
+          </label>
+          <label>
+            Update command <span class="muted">(shows a ⟳ Update button, e.g. git pull)</span>
+            <input id="inp-update" type="text" placeholder="git pull" />
+          </label>
+          <label>
+            Rebuild command <span class="muted">(runs after the update — blank auto-detects <code>rebuild.bat</code>, "off" disables)</span>
+            <input id="inp-rebuild" type="text" placeholder="rebuild.bat (auto)" />
+          </label>
+        </details>
+
+        <p class="sdk-hint">
+          Building a new app? <button type="button" id="btn-sdk-2" class="linkish">Copy the SDK prompt</button>
+          into your AI coding tool — it makes the app Rack-ready.
+        </p>
+      </div>
 
       <p id="modal-error" class="modal-error" hidden></p>
       <div class="modal-actions">
@@ -257,6 +286,26 @@
     </div>
   </div>
 
+  <!-- ======================= apps folder modal ======================= -->
+  <div id="folder-modal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <h3>Apps folder</h3>
+      <p class="muted">
+        Where Rack clones apps you install from GitHub. Existing apps stay where they are —
+        this only decides where new clones land.
+      </p>
+      <label>
+        Folder
+        <input id="folder-input" type="text" placeholder="C:\Users\you\apps" />
+      </label>
+      <p id="folder-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button id="folder-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="folder-save" class="btn btn-run">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ======================= changelog modal ======================= -->
   <div id="changelog-modal" class="modal-backdrop" hidden>
     <div class="modal modal-wide">
@@ -271,17 +320,18 @@
   <!-- template for one process row -->
   <template id="proc-tpl">
     <div class="proc-row">
-      <div class="proc-row-top">
+      <div class="proc-line">
+        <input class="proc-path" type="text" placeholder="Folder, .exe, .bat — or a command like: npm run start" />
+        <input class="proc-port" type="text" placeholder="Port" />
+        <button type="button" class="proc-more btn btn-ghost btn-sm" title="Console name, arguments, working folder, stop command">⋯</button>
+        <button type="button" class="proc-remove btn btn-danger-ghost btn-sm" title="Remove this process">✕</button>
+      </div>
+      <div class="proc-extra" hidden>
         <input class="proc-name" type="text" placeholder="Console name (e.g. PocketBase)" />
-        <button class="proc-remove btn btn-danger-ghost btn-sm" title="Remove this process">✕</button>
+        <input class="proc-args" type="text" placeholder="Arguments" />
+        <input class="proc-dir" type="text" placeholder="Working folder — needed for typed commands" />
+        <input class="proc-stop" type="text" placeholder="Stop command — e.g. docker compose down" />
       </div>
-      <input class="proc-path" type="text" placeholder="Folder, .exe, .bat — or a command like: npm run start" />
-      <div class="proc-row-grid">
-        <input class="proc-args" type="text" placeholder="Arguments (optional)" />
-        <input class="proc-port" type="text" placeholder="Port (optional)" />
-      </div>
-      <input class="proc-dir" type="text" placeholder="Working folder (optional — needed for typed commands)" />
-      <input class="proc-stop" type="text" placeholder="Stop command (optional — e.g. docker compose down)" />
     </div>
   </template>
 

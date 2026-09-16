@@ -35,6 +35,61 @@ document.addEventListener("click", (e) => {
   if (!settingsMenu.hidden && !e.target.closest(".sidebar-header")) settingsMenu.hidden = true;
 });
 
+/* ------------------------------------------------------------- apps folder */
+
+// Where "Install from GitHub" clones to. Lives server-side so every browser
+// pointed at this controller agrees on it.
+let appsDir = null;
+let gitOk = true;
+
+function renderAppsDir() {
+  const btn = $("install-dir");
+  if (btn) {
+    btn.textContent = appsDir || "not set — pick one";
+    btn.title = appsDir || "";
+  }
+  const install = $("btn-install");
+  if (install) install.title = gitOk ? "" : "git isn't installed, or isn't on PATH";
+}
+async function loadSettings() {
+  try {
+    const s = await fetch("/api/settings").then((r) => r.json());
+    appsDir = s.appsDir || null;
+    gitOk = s.git !== false;
+    renderAppsDir();
+  } catch {}
+}
+loadSettings();
+
+const folderModal = $("folder-modal");
+function openFolderModal() {
+  settingsMenu.hidden = true;
+  $("folder-input").value = appsDir || "";
+  $("folder-error").hidden = true;
+  folderModal.hidden = false;
+  $("folder-input").focus();
+}
+$("btn-folder").onclick = openFolderModal;
+$("install-dir").onclick = openFolderModal;
+$("folder-cancel").onclick = () => (folderModal.hidden = true);
+folderModal.onclick = (e) => { if (e.target === folderModal) folderModal.hidden = true; };
+$("folder-save").onclick = async () => {
+  const res = await api("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ appsDir: $("folder-input").value }),
+  });
+  if (res.error) {
+    $("folder-error").textContent = res.error;
+    $("folder-error").hidden = false;
+    return;
+  }
+  appsDir = res.appsDir || null;
+  gitOk = res.git !== false;
+  renderAppsDir();
+  folderModal.hidden = true;
+};
+
 /* ------------------------------------------------------------- run on boot */
 
 function setBootLabel(on) {
@@ -1426,9 +1481,12 @@ cfLogModal.onclick = (e) => { if (e.target === cfLogModal) cfLogModal.hidden = t
 const modal = $("modal");
 let editingId = null;
 
+// A process needs a command and (sometimes) a port; everything else hides
+// behind ⋯ until it's actually used.
 function addProcRow(cmd) {
   const tpl = $("proc-tpl").content.cloneNode(true);
   const row = tpl.querySelector(".proc-row");
+  const extra = row.querySelector(".proc-extra");
   if (cmd) {
     row.querySelector(".proc-name").value = cmd.name || "";
     row.querySelector(".proc-path").value = cmd.exe || "";
@@ -1436,16 +1494,41 @@ function addProcRow(cmd) {
     row.querySelector(".proc-port").value = cmd.port || "";
     row.querySelector(".proc-dir").value = cmd.dir || "";
     row.querySelector(".proc-stop").value = cmd.stopCommand || "";
+    // don't hide fields an existing app actually uses
+    extra.hidden = ![...extra.querySelectorAll("input")].some((i) => i.value.trim());
   }
+  row.querySelector(".proc-more").onclick = () => {
+    extra.hidden = !extra.hidden;
+    if (!extra.hidden) extra.querySelector("input").focus();
+  };
   row.querySelector(".proc-remove").onclick = () => {
     if ($("proc-rows").children.length > 1) row.remove();
   };
   $("proc-rows").appendChild(row);
 }
 
+// The dialog does one of two things: install from GitHub, or wire up something
+// already on this machine. Showing both at once is what made it a wall.
+let editorMode = "github";
+function setMode(mode) {
+  editorMode = mode;
+  $("tab-github").classList.toggle("on", mode === "github");
+  $("tab-local").classList.toggle("on", mode === "local");
+  $("pane-github").hidden = mode !== "github";
+  $("pane-local").hidden = mode === "github";
+  $("modal-save").hidden = mode === "github"; // Install is that pane's action
+  $("modal-error").hidden = true;
+  const first = mode === "github" ? $("inp-repo") : $("inp-name");
+  first.focus();
+}
+$("tab-github").onclick = () => setMode("github");
+$("tab-local").onclick = () => setMode("local");
+
 function openEditor(app) {
   editingId = app ? app.id : null;
   $("modal-title").textContent = app ? "Edit app" : "Add app";
+  $("mode-tabs").hidden = !!app; // editing is always local
+  $("inp-repo").value = "";
   $("inp-name").value = app ? app.name : "";
   $("inp-category").value = app ? app.category || "" : "";
   $("inp-autostart").checked = app ? !!app.autostart : false;
@@ -1457,9 +1540,11 @@ function openEditor(app) {
   $("proc-rows").innerHTML = "";
   if (app && app.commands.length) app.commands.forEach(addProcRow);
   else addProcRow();
+  $("advanced").open = !!(app && (app.autostart || app.update || app.rebuild));
   $("modal-error").hidden = true;
   modal.hidden = false;
-  (app ? $("inp-name") : $("proc-rows").querySelector(".proc-path")).focus();
+  setMode(app ? "local" : "github");
+  if (app) $("inp-name").focus();
 }
 
 function collectSpecs() {
@@ -1472,6 +1557,27 @@ function collectSpecs() {
     stopCommand: row.querySelector(".proc-stop").value,
   }));
 }
+
+// Paste a repo link → clone it into the apps folder → it shows up as an app.
+$("btn-install").onclick = async () => {
+  const url = $("inp-repo").value.trim();
+  if (!url) return showModalError("Paste a repository link first.");
+  if (!appsDir) return openFolderModal();
+  modal.hidden = true;
+  $("update-title").textContent = "Install from GitHub";
+  $("update-sub").textContent = `Cloning into ${appsDir}…`;
+  $("update-log").innerHTML = "";
+  updateModal.hidden = false;
+  const res = await api("/api/install", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (res.error) {
+    appendLine($("update-log"), "err", "[install] " + res.error);
+    $("update-sub").textContent = "Install failed.";
+  }
+};
 
 $("add-app-btn").onclick = () => openEditor(null);
 $("btn-edit").onclick = () => selected() && openEditor(selected());
@@ -1541,9 +1647,14 @@ document.addEventListener("keydown", (e) => {
     cfModal.hidden = true;
     cfSetupModal.hidden = true;
     cfLogModal.hidden = true;
+    folderModal.hidden = true;
   }
   if (e.key === "Enter" && !cfModal.hidden && e.target.tagName === "INPUT" && e.target.type === "text") {
     $("cf-save").click();
+    return;
+  }
+  if (e.key === "Enter" && !modal.hidden && e.target.id === "inp-repo") {
+    $("btn-install").click();
     return;
   }
   if (e.key === "Enter" && !modal.hidden && e.target.tagName !== "BUTTON") {
@@ -1602,6 +1713,18 @@ function connectEvents() {
           : app && app.running
           ? "✓ Updated."
           : "✓ Updated — press Run.";
+    } else if (ev.type === "install-log") {
+      appendLine($("update-log"), ev.stream, ev.line);
+    } else if (ev.type === "install-done") {
+      $("update-sub").textContent = ev.ok
+        ? "✓ Installed — press Run."
+        : "Install failed — see the log.";
+      if (ev.ok && ev.app) {
+        selectedId = ev.app.id;
+        $("inp-repo").value = "";
+        refreshApps().then(loadLogs);
+        showPortInfo(ev.portInfo);
+      }
     } else if (ev.type === "self-update-log") {
       appendLine($("update-log"), ev.stream, ev.line);
     } else if (ev.type === "self-update-done") {

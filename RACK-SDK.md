@@ -66,7 +66,7 @@ A Docker app looks like this — one process, using `stop` for a graceful teardo
 | `autostart` | app | `true` = start this app when Rack launches (e.g. on boot). |
 | `update` | app | Optional shell command (e.g. `git pull`) shown as a **⟳ Update** button; runs in the first process's folder and streams its output. Use it to pull new code before Run. |
 | `rebuild` | app | Build command run straight after `update` (see below). Leave it out and Rack runs a `rebuild.bat` in the app folder if there is one; `false` turns that off. |
-| `setup` | app | A one-time command (string) shown as a hint. Run it by hand once and after code changes — it is **not** launched as a process. |
+| `setup` | app | A one-time command (string), e.g. `npm install`. Rack runs it once when it installs the app from GitHub, and shows it as a hint otherwise — it is **not** launched as a process. |
 | `processes[]` | app | One entry per long-running server; each gets its own console. |
 | `name` | process | Console label. |
 | `command` | process | A path (relative to the folder), an `.exe`/`.bat`, or a typed command like `npm run start`. |
