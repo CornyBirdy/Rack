@@ -1716,9 +1716,11 @@ function connectEvents() {
     } else if (ev.type === "install-log") {
       appendLine($("update-log"), ev.stream, ev.line);
     } else if (ev.type === "install-done") {
-      $("update-sub").textContent = ev.ok
-        ? "✓ Installed — press Run."
-        : "Install failed — see the log.";
+      $("update-sub").textContent = !ev.ok
+        ? "Install failed — see the log."
+        : ev.warned
+        ? "Installed, but a setup step failed — see the log."
+        : "✓ Installed — press Run.";
       if (ev.ok && ev.app) {
         selectedId = ev.app.id;
         $("inp-repo").value = "";

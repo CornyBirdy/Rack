@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.9.1
+- **Fix: an installed app that Rack couldn't run.** A manifest process with
+  `"dir": "."` — straight out of the SDK example — had its working folder
+  resolved against whatever directory Rack itself was started from, so the app
+  ran in Rack's own folder instead of its own, with its command left unresolved.
+  `dir` is now always relative to the app's folder, as RACK-SDK says. An app
+  already added that way needs its working folder fixed in ✎ Edit, or a
+  remove + re-install.
+- **Fix: a failed `setup` no longer throws the install away.** The clone is on
+  disk either way, so the app is added and the log says which step failed —
+  fix it and press ⟳ Update. Only the clone itself can stop an install now.
+- **Fix: `setup.bat` is found.** A setup or build command naming a script in the
+  app's folder runs by its full path, instead of relying on the shell to look in
+  the current directory (which Windows can be configured not to do).
+- **Fix: a script that ends in `pause` can't hang an install or an update.**
+  Rack runs these steps with no stdin, so a prompt nobody can answer returns
+  straight away instead of waiting forever. A step still running after 10
+  minutes is stopped and the install carries on.
+
 ## v0.9
 - **Apps folder** (⚙ menu) — one folder where Rack keeps the apps you install.
 - **Install from GitHub** — paste a repo link into **+ Add app** and press

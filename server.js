@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execFile, execSync } = require("child_process");
 
-const VERSION = "0.9";
+const VERSION = "0.9.1";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -413,6 +413,21 @@ function appDir(app) {
   return (app.commands[0] && app.commands[0].dir) || ROOT;
 }
 
+// "setup.bat" means the one in the app's folder. cmd.exe usually finds it there,
+// but not when NoDefaultCurrentDirectoryInExePath is set — and a shell started
+// from an odd place may not either — so spell the path out. A command that isn't
+// a file in the folder ("npm install", "git pull") is left alone.
+function resolveStepCommand(command, dir) {
+  const line = String(command || "").trim();
+  const m = /^"([^"]+)"|^(\S+)/.exec(line);
+  if (!m) return line;
+  const first = (m[1] || m[2] || "").replace(/^\.[\\/]/, "");
+  if (!first || path.isAbsolute(first)) return line;
+  const full = path.join(dir, first);
+  if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return line;
+  return `"${full}"${line.slice(m[0].length)}`;
+}
+
 // New code often has to be compiled before it can run, so ⟳ Update runs a second
 // step after the update command: the app's `rebuild` command, or — when none is
 // set — a `rebuild.bat` sitting in its folder. Set `rebuild` to "off" to skip it.
@@ -587,7 +602,14 @@ function updateApp(app) {
     emit("out", `[${tag}] ${label}   (in ${dir})`);
     let proc;
     try {
-      proc = spawn(cmd, { cwd: dir, windowsHide: true, shell: true });
+      // `cmd` may name a script in the app's folder, and stdin is /dev/null so a
+      // script that ends in `pause` can't stall the update forever.
+      proc = spawn(resolveStepCommand(cmd, dir), {
+        cwd: dir,
+        windowsHide: true,
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } catch (e) {
       emit("err", `[${tag}] error: ${e.message}`);
       return onExit(1);
@@ -754,9 +776,11 @@ function resolveCommand(spec, baseDir) {
     dir = baseDir ? path.resolve(baseDir) : ROOT;
   }
 
-  // Optional working-folder override.
+  // Optional working-folder override. A manifest's `"dir": "."` means the app's
+  // own folder, so relative paths resolve against baseDir — not against whatever
+  // directory Rack itself was started from.
   if (spec.dir && spec.dir.trim()) {
-    const d = path.resolve(spec.dir.trim().replace(/^"|"$/g, ""));
+    const d = path.resolve(baseDir || ".", spec.dir.trim().replace(/^"|"$/g, ""));
     if (!fs.existsSync(d)) return { error: `Working folder does not exist: ${d}` };
     dir = d;
   }
@@ -814,7 +838,7 @@ function buildFromManifest(dir, man, nameOverride) {
     const proc = procs[i];
     const r = resolveCommand(
       { name: proc.name, path: proc.command, args: proc.args, dir: proc.dir, port: proc.port, stopCommand: proc.stop || proc.stopCommand },
-      proc.dir ? undefined : dir
+      dir
     );
     if (r.error) return { error: `Manifest process "${proc.name || i + 1}": ${r.error}` };
     if (proc.managed != null) r.cmd.managePort = !!proc.managed; // manifest wins over auto-detect
@@ -951,6 +975,7 @@ function installApp(body) {
     return { ok: false, error: `${repo.name} is already added — it lives in ${target}.` };
 
   const emit = (stream, line) => broadcast({ type: "install-log", stream, line });
+  let stepFailed = false; // a setup/build step that failed, but didn't stop the install
   const finish = (ok, extra) => {
     if (!installing) return;
     installing = false;
@@ -981,21 +1006,43 @@ function installApp(body) {
     broadcast({ type: "apps" });
     if (!man) emit("out", "[install] no rack.json in this repo — check the processes with Edit.");
     emit("out", `[install] added "${app.name}" — ${app.commands.length} process(es).`);
-    finish(true, { app: stateOf(app), portInfo });
+    finish(true, { app: stateOf(app), portInfo, warned: stepFailed });
   };
 
+  // Only the clone is allowed to stop an install. A repo's own setup or build
+  // script failing is worth shouting about, but the clone is already on disk, so
+  // the app still gets added — fix the script and press ⟳ Update.
+  const STEP_TIMEOUT = 10 * 60 * 1000;
   const runSteps = (list, i, done) => {
     if (i >= list.length) return done();
     const step = list[i];
+    const skip = (why) => {
+      emit("err", `[${step.tag}] ${why}`);
+      if (!step.optional) return finish(false, { error: `${step.tag}: ${why}` });
+      stepFailed = true;
+      emit("out", `[${step.tag}] carrying on — the app is still added.`);
+      runSteps(list, i + 1, done);
+    };
     emit("out", `[${step.tag}] ${step.cmd}   (in ${step.cwd})`);
     let proc;
     try {
-      proc = spawn(step.cmd, { cwd: step.cwd, windowsHide: true, shell: true });
+      // stdin is /dev/null on purpose: a setup script that ends in `pause`, or
+      // asks a question, would otherwise wait forever on input nobody can type.
+      proc = spawn(step.cmd, {
+        cwd: step.cwd,
+        windowsHide: true,
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } catch (e) {
-      emit("err", `[${step.tag}] ${e.message}`);
-      return finish(false, { error: e.message });
+      return skip(e.message);
     }
     installProc = proc;
+    let done_ = false;
+    const cap = setTimeout(() => {
+      emit("err", `[${step.tag}] still running after 10 minutes — stopping it.`);
+      killPid(proc.pid);
+    }, STEP_TIMEOUT);
     // git reports clone progress on stderr, so a red line here isn't a failure —
     // only the exit code decides.
     const pump = (stream) => (d) =>
@@ -1003,15 +1050,18 @@ function installApp(body) {
     proc.stdout.on("data", pump("out"));
     proc.stderr.on("data", pump("err"));
     proc.on("error", (e) => {
-      emit("err", `[${step.tag}] ${e.message}`);
-      finish(false, { error: e.message });
+      if (done_) return;
+      done_ = true;
+      clearTimeout(cap);
+      installProc = null;
+      skip(e.message);
     });
     proc.on("exit", (code) => {
+      if (done_) return;
+      done_ = true;
+      clearTimeout(cap);
       installProc = null;
-      if (code !== 0) {
-        emit("err", `[${step.tag}] failed (exit code ${code}).`);
-        return finish(false, { error: `${step.tag} failed (exit code ${code})` });
-      }
+      if (code !== 0) return skip(`failed (exit code ${code}).`);
       runSteps(list, i + 1, done);
     });
   };
@@ -1022,14 +1072,14 @@ function installApp(body) {
     const man = loadManifest(target) || {};
     const setup = man.setup ? (typeof man.setup === "string" ? man.setup : man.setup.command) : null;
     const post = [];
-    if (setup) post.push({ tag: "setup", cmd: setup, cwd: target });
+    if (setup) post.push({ tag: "setup", cmd: resolveStepCommand(setup, target), cwd: target, optional: true });
     // A fresh clone usually has to be built before it can run; rebuildStepFor()
     // takes the app's folder + rebuild setting, which is all we have so far.
     const rb = rebuildStepFor({
       commands: [{ dir: target }],
       rebuild: man.rebuild == null ? null : man.rebuild === false ? "off" : String(man.rebuild),
     });
-    if (rb) post.push({ tag: "build", cmd: rb.cmd, cwd: target });
+    if (rb) post.push({ tag: "build", cmd: resolveStepCommand(rb.cmd, target), cwd: target, optional: true });
     runSteps(post, 0, register);
   };
 

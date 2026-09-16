@@ -66,12 +66,12 @@ A Docker app looks like this — one process, using `stop` for a graceful teardo
 | `autostart` | app | `true` = start this app when Rack launches (e.g. on boot). |
 | `update` | app | Optional shell command (e.g. `git pull`) shown as a **⟳ Update** button; runs in the first process's folder and streams its output. Use it to pull new code before Run. |
 | `rebuild` | app | Build command run straight after `update` (see below). Leave it out and Rack runs a `rebuild.bat` in the app folder if there is one; `false` turns that off. |
-| `setup` | app | A one-time command (string), e.g. `npm install`. Rack runs it once when it installs the app from GitHub, and shows it as a hint otherwise — it is **not** launched as a process. |
+| `setup` | app | A one-time command (string), e.g. `npm install`. Rack runs it once when it installs the app from GitHub, and shows it as a hint otherwise — it is **not** launched as a process. Keep it **non-interactive**: it runs with no stdin (a `pause` returns straight away) and is capped at 10 minutes. If it fails, the app is still added. |
 | `processes[]` | app | One entry per long-running server; each gets its own console. |
 | `name` | process | Console label. |
 | `command` | process | A path (relative to the folder), an `.exe`/`.bat`, or a typed command like `npm run start`. |
 | `args` | process | Optional extra arguments (string or array). |
-| `dir` | process | Working folder (defaults to the app folder). |
+| `dir` | process | Working folder, relative to the app folder — `"."` **is** the app folder, which is also the default. |
 | `port` | process | The port this process uses. |
 | `portEnv` | process | Env var Rack sets to the effective port (e.g. `PB_PORT`). Your launcher reads it. |
 | `managed` | process | `true` = Rack may move this port to avoid clashes; `false` = fixed (declared, warn-only). Defaults: PocketBase → managed, everything else → fixed. |
