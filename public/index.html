@@ -19,6 +19,7 @@
           <button id="btn-theme" class="menu-item">◐ <span>Theme</span></button>
           <button id="btn-folder" class="menu-item">▤ <span>Apps folder</span></button>
           <button id="btn-boot" class="menu-item">⏻ <span>Run on boot: off</span></button>
+          <button id="btn-exposure" class="menu-item">🔒 <span>What's exposed</span></button>
           <button id="btn-cf" class="menu-item">☁ <span>Set up Cloudflare</span></button>
           <button id="btn-sdk" class="menu-item">⧉ <span>Copy SDK prompt</span></button>
           <button id="btn-check-updates" class="menu-item">⟲ <span>Check for updates</span></button>
@@ -307,6 +308,25 @@
   </div>
 
   <!-- ======================= changelog modal ======================= -->
+  <!-- ======================= what's exposed ======================= -->
+  <div id="exposure-modal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <h3>What's exposed</h3>
+      <p class="modal-sub" id="exp-sub">Every port this machine is listening on, and how far it reaches.</p>
+
+      <div id="exp-body" class="exp-body"></div>
+
+      <div class="modal-actions">
+        <label class="exp-filter">
+          <input type="checkbox" id="exp-hide-local" checked /> Hide ports only this PC can reach
+        </label>
+        <span class="spacer"></span>
+        <button id="exp-refresh" class="btn btn-ghost">Refresh</button>
+        <button id="exp-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="changelog-modal" class="modal-backdrop" hidden>
     <div class="modal modal-wide">
       <h3 id="changelog-title">Changelog</h3>

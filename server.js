@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execFile, execSync } = require("child_process");
 
-const VERSION = "0.9.1";
+const VERSION = "0.10.0";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -1277,6 +1277,12 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, await funnelState());
     }
 
+    // GET /api/exposure  → every listening port on this machine, with the
+    // program behind it and how far it reaches
+    if (parts[1] === "exposure" && req.method === "GET") {
+      return sendJSON(res, 200, await exposureState());
+    }
+
     // GET /api/cf  → cloudflared availability, named tunnels, live tunnels
     if (parts[1] === "cf" && !parts[2] && req.method === "GET") {
       return sendJSON(res, 200, await cfState());
@@ -1503,17 +1509,24 @@ async function funnelState() {
   return { available: true, dnsName, ports: FUNNEL_PORTS, active };
 }
 
-async function setFunnel({ publicPort, localPort, enable }) {
+// mode "serve" shares on the tailnet only; the default "funnel" is public.
+// Funnel is limited to three ports by Tailscale; serve is not.
+async function setFunnel({ publicPort, localPort, enable, mode }) {
   const pub = Number(publicPort);
-  if (!FUNNEL_PORTS.includes(pub))
+  const verb = mode === "serve" ? "serve" : "funnel";
+  if (!Number.isInteger(pub) || pub < 1 || pub > 65535)
+    return { ok: false, error: "That public port is not a valid port number." };
+  if (verb === "funnel" && !FUNNEL_PORTS.includes(pub))
     return { ok: false, error: `Funnel only allows public ports ${FUNNEL_PORTS.join(", ")}.` };
   if (enable) {
     if (!localPort) return { ok: false, error: "That process has no port to expose." };
-    const r = await tsExec(`funnel --bg --https=${pub} localhost:${localPort}`);
-    if (!r.ok) return { ok: false, error: r.err || "Failed to enable funnel." };
+    const r = await tsExec(`${verb} --bg --https=${pub} localhost:${localPort}`);
+    if (!r.ok) return { ok: false, error: r.err || `Failed to enable ${verb}.` };
   } else {
-    const r = await tsExec(`funnel --https=${pub} off`);
-    if (!r.ok) return { ok: false, error: r.err || "Failed to turn the funnel off." };
+    // `serve off` drops the funnel with it; `funnel off` leaves the tailnet
+    // share standing, which is what the "make tailnet-only" button wants.
+    const r = await tsExec(`${verb} --https=${pub} off`);
+    if (!r.ok) return { ok: false, error: r.err || `Failed to turn the ${verb} off.` };
   }
   return { ok: true };
 }
@@ -2001,6 +2014,264 @@ function createTunnel({ name, hostname }) {
   });
 
   return { ok: true };
+}
+
+/* ------------------------------------------------- machine-wide exposure */
+
+// Rack knows the ports of the apps it runs. This section covers the rest of the
+// machine: every listening port with the program behind it, so a funnel on 8443
+// can be read as "that's Immich" rather than "that's localhost:2283".
+
+const EXPOSURE_PS = `
+$ErrorActionPreference = 'SilentlyContinue'
+$procs = @{}
+foreach ($p in (Get-CimInstance Win32_Process)) {
+  $procs[[int]$p.ProcessId] = @{ name = $p.Name; path = $p.ExecutablePath; command = $p.CommandLine }
+}
+$rows = New-Object System.Collections.ArrayList
+function Add-Row($proto, $addr, $port, $owner) {
+  $i = $null
+  if ($owner -ne $null) { $i = $procs[[int]$owner] }
+  [void]$rows.Add([pscustomobject]@{
+    proto = $proto; address = [string]$addr; port = [int]$port
+    owner = $(if ($owner -ne $null) { [int]$owner } else { $null })
+    process = $(if ($i) { $i.name } else { $null })
+    path = $(if ($i) { $i.path } else { $null })
+    command = $(if ($i) { $i.command } else { $null })
+  })
+}
+foreach ($c in (Get-NetTCPConnection -State Listen)) { Add-Row 'tcp' $c.LocalAddress $c.LocalPort $c.OwningProcess }
+foreach ($c in (Get-NetUDPEndpoint)) { Add-Row 'udp' $c.LocalAddress $c.LocalPort $c.OwningProcess }
+$elevated = $false
+try {
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $elevated = (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} catch { }
+[pscustomobject]@{ rows = $rows; elevated = $elevated } | ConvertTo-Json -Depth 5 -Compress
+`;
+
+// Piping the script through stdin keeps it out of the command line, so none of
+// it has to survive cmd.exe quoting.
+function psJson(script) {
+  return new Promise((resolve) => {
+    let out = "";
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    let child;
+    try {
+      child = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", "-"], { windowsHide: true });
+    } catch {
+      return finish(null);
+    }
+    const timer = setTimeout(() => { try { child.kill(); } catch {} finish(null); }, 40000);
+    child.stdout.on("data", (d) => (out += d));
+    child.on("error", () => { clearTimeout(timer); finish(null); });
+    child.on("close", () => {
+      clearTimeout(timer);
+      try { finish(JSON.parse(out.trim())); } catch { finish(null); }
+    });
+    child.stdin.end(script);
+  });
+}
+
+function shellLines(cmd) {
+  return new Promise((resolve) => {
+    exec(cmd, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) =>
+      resolve(String(stdout || "").split("\n"))
+    );
+  });
+}
+
+function hostPort(token) {
+  const m = /^(.*):(\d+)$/.exec(token || "");
+  if (!m) return null;
+  const host = m[1].replace(/^\[|\]$/g, "");
+  return { host: host === "*" ? "0.0.0.0" : host, port: Number(m[2]) };
+}
+
+// One row per listening socket: { proto, address, port, pid, process, path, command }.
+async function scanListeners() {
+  if (process.platform === "win32") {
+    const data = await psJson(EXPOSURE_PS);
+    if (!data) return { rows: [], elevated: null, error: "Windows would not list the open ports." };
+    const raw = Array.isArray(data.rows) ? data.rows : data.rows ? [data.rows] : [];
+    return {
+      elevated: data.elevated === true,
+      rows: raw
+        .filter((r) => r && Number(r.port) > 0)
+        .map((r) => ({
+          proto: r.proto,
+          address: String(r.address || ""),
+          port: Number(r.port),
+          pid: r.owner == null ? null : Number(r.owner),
+          process: r.process || null,
+          path: r.path || null,
+          command: r.command || null,
+        })),
+    };
+  }
+
+  // Linux/macOS: ss where it exists, lsof otherwise.
+  const rows = [];
+  const ssLines = await shellLines("ss -lntupH");
+  if (ssLines.some((l) => l.trim())) {
+    for (const line of ssLines) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 5) continue;
+      const hp = hostPort(parts[4]);
+      if (!hp) continue;
+      const who = /users:\(\("([^"]+)",pid=(\d+)/.exec(line);
+      rows.push({
+        proto: parts[0].toLowerCase().startsWith("u") ? "udp" : "tcp",
+        address: hp.host,
+        port: hp.port,
+        pid: who ? Number(who[2]) : null,
+        process: who ? who[1] : null,
+        path: null,
+        command: null,
+      });
+    }
+  } else {
+    for (const [proto, flag] of [["tcp", "-iTCP -sTCP:LISTEN"], ["udp", "-iUDP"]]) {
+      const lines = await shellLines(`lsof -nP ${flag}`);
+      for (const line of lines.slice(1)) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 9) continue;
+        const hp = parts.slice(8).map(hostPort).filter(Boolean).pop();
+        if (!hp) continue;
+        rows.push({ proto, address: hp.host, port: hp.port, pid: Number(parts[1]) || null, process: parts[0], path: null, command: null });
+      }
+    }
+  }
+  for (const row of rows) {
+    if (!row.pid || row.command) continue;
+    try {
+      row.command = fs.readFileSync(`/proc/${row.pid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
+      row.path = fs.readlinkSync(`/proc/${row.pid}/exe`);
+    } catch {}
+  }
+  return { rows, elevated: null };
+}
+
+// port -> the Rack app and process sitting on it.
+function rackPortOwners() {
+  const byPort = new Map();
+  for (const app of apps) {
+    const slots = slotsFor(app);
+    app.commands.forEach((cmd, i) => {
+      const slot = slots[i];
+      const port = (slot && slot.proc && slot.effPort) || cmd.port;
+      if (!port) return;
+      byPort.set(Number(port), {
+        appId: app.id,
+        appName: app.name,
+        procName: cmd.name,
+        cmdIndex: i,
+        running: !!(slot && slot.proc),
+      });
+    });
+  }
+  return byPort;
+}
+
+const OTHER_TUNNELS = [
+  { id: "cloudflared", label: "Cloudflare Tunnel", re: /cloudflared/i },
+  { id: "ngrok", label: "ngrok", re: /\bngrok\b/i },
+  { id: "frp", label: "frp", re: /\bfrpc\b/i },
+];
+
+// Tunnel daemons Rack did not start — someone's stray run-tunnel.bat.
+function foreignTunnels(rows, rackPids) {
+  const found = new Map();
+  for (const row of rows) {
+    const text = [row.process, row.path, row.command].filter(Boolean).join(" ");
+    const hit = text && OTHER_TUNNELS.find((t) => t.re.test(text));
+    if (!hit || rackPids.has(row.pid)) continue;
+    const key = `${hit.id}:${row.pid}`;
+    if (found.has(key)) continue;
+    const url = /--url[= ]\s*(\S+)/i.exec(row.command || "");
+    const target = url ? hostPort(url[1].replace(/^https?:\/\//, "").replace(/\/+$/, "")) : null;
+    found.set(key, {
+      label: hit.label,
+      pid: row.pid,
+      command: row.command || row.process,
+      targetPort: target ? target.port : null,
+      url: url ? url[1] : null,
+    });
+  }
+  return [...found.values()];
+}
+
+const isLoopback = (addr) => addr === "::1" || /^127\./.test(addr || "");
+
+async function exposureState() {
+  const [scan, funnel] = await Promise.all([scanListeners(), funnelState()]);
+  const owners = rackPortOwners();
+  const shares = funnel.available ? funnel.active : [];
+
+  const rackTunnels = [];
+  const rackPids = new Set();
+  for (const [key, t] of tunnels) {
+    const [appId, idx] = key.split(":");
+    const app = apps.find((a) => a.id === appId);
+    const slot = app ? slotsFor(app)[Number(idx)] : null;
+    if (t.pid) rackPids.add(t.pid);
+    rackTunnels.push({
+      label: "Cloudflare Tunnel",
+      appName: app ? app.name : appId,
+      procName: app && app.commands[idx] ? app.commands[idx].name : null,
+      hostname: t.hostname,
+      url: t.hostname ? `https://${t.hostname}` : null,
+      status: t.status,
+      targetPort: slot ? slot.effPort : null,
+      managed: true,
+    });
+  }
+
+  const foreign = foreignTunnels(scan.rows, rackPids);
+  const tunnelPorts = new Map();
+  for (const t of [...rackTunnels, ...foreign]) {
+    if (!t.targetPort) continue;
+    tunnelPorts.set(t.targetPort, [...(tunnelPorts.get(t.targetPort) || []), t]);
+  }
+
+  // Collapse the dual 0.0.0.0 / :: bind of one service into a single row.
+  const merged = new Map();
+  for (const row of scan.rows) {
+    const key = `${row.proto}:${row.port}:${row.pid ?? row.process ?? ""}`;
+    const existing = merged.get(key);
+    if (existing) {
+      if (!existing.addresses.includes(row.address)) existing.addresses.push(row.address);
+      existing.loopbackOnly = existing.loopbackOnly && isLoopback(row.address);
+      continue;
+    }
+    merged.set(key, { ...row, addresses: [row.address], loopbackOnly: isLoopback(row.address) });
+  }
+
+  const listeners = [...merged.values()]
+    .map((row) => {
+      const onPort = shares.filter((sh) => sh.localPort === row.port);
+      const viaTunnel = tunnelPorts.get(row.port) || [];
+      const isPublic = onPort.some((sh) => sh.isFunnel) || viaTunnel.length > 0;
+      return {
+        ...row,
+        owner: owners.get(row.port) || null,
+        shares: onPort,
+        tunnels: viaTunnel,
+        reach: isPublic ? "public" : onPort.length ? "tailnet" : row.loopbackOnly ? "local" : "lan",
+      };
+    })
+    .sort((a, b) => a.port - b.port || a.proto.localeCompare(b.proto));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    elevated: scan.elevated,
+    scanError: scan.error || null,
+    tailscale: { available: funnel.available, reason: funnel.reason || null, dnsName: funnel.dnsName || null, ports: funnel.ports || FUNNEL_PORTS },
+    shares: shares.map((sh) => ({ ...sh, owner: owners.get(sh.localPort) || null, process: (listeners.find((l) => l.port === sh.localPort && l.proto === "tcp") || {}).process || null })),
+    tunnels: [...rackTunnels, ...foreign],
+    listeners,
+  };
 }
 
 /* --------------------------------------------------------- run on boot (win) */

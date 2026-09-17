@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.10.0
+- **New: ⚙ → 🔒 What's exposed.** Rack knew the ports of the apps it runs, which
+  left the rest of the machine a blank — a funnel on 8443 said `localhost:2283`
+  and nothing about what 2283 was. This lists every listening port on the machine
+  with the program behind it, naming the **Rack app and process** where Rack runs
+  it, and marks how far each one reaches: this PC, the LAN, your tailnet, or the
+  open internet. Anything published right now is called out at the top, the
+  internet-facing list first.
+- **Tunnels Rack didn't start are listed too.** A stray `cloudflared` from a
+  `run-tunnel.bat` was invisible to Rack even while it published a port. It now
+  shows up beside the funnels, matched to the port it publishes.
+- **Sharing from the same view.** Any port on the machine can be shared on your
+  tailnet or opened to the internet, not just the ports of apps Rack runs. Ports
+  already funnelled say which app holds them.
+- Run Rack as administrator for the program behind system ports — Windows hides
+  that from a normal user, and the view now says so rather than showing blanks.
+
 ## v0.9.1
 - **Fix: an installed app that Rack couldn't run.** A manifest process with
   `"dir": "."` — straight out of the SDK example — had its working folder

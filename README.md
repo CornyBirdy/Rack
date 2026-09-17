@@ -118,14 +118,47 @@ you're filtering, and dragging is off — the order you see isn't the whole list
 ## Controller settings (⚙)
 
 The **⚙** button in the sidebar header (top-left) holds controller-wide settings
-— **Theme** and **Run on boot** — kept separate from the per-app buttons so it's
-clear what acts on the controller vs. the selected app.
+— **Theme**, **Run on boot**, and **What's exposed** — kept separate from the
+per-app buttons so it's clear what acts on the controller vs. the selected app.
 
 - **Run on boot** installs/removes a Windows Startup entry that launches the
   controller (hidden) when you log in.
 - Tick **"Start automatically when the controller launches"** in an app's editor
   to have that app come up on its own — so after a reboot, your usual apps are
   back. Apps show a ⚡ badge in the sidebar when auto-start is on.
+
+## What's exposed (⚙ → 🔒)
+
+Rack knows the ports of the apps it runs. This view covers **the whole machine**,
+so you can answer "what is on this port?" and "what is that funnel actually
+pointing at?" without guessing.
+
+It lists every listening port with the program behind it — the **Rack app and
+process** where Rack runs it, otherwise the program name, PID and path — and how
+far each one reaches:
+
+| Badge | Means |
+|---|---|
+| **This PC only** | Bound to `127.0.0.1`. Nothing off this machine can reach it. |
+| **Local network** | Bound to `0.0.0.0`, so anything on your LAN can reach it. |
+| **Tailnet** | Tailscale `serve`. Only devices signed in to your tailnet. |
+| **Internet** | Tailscale Funnel or a tunnel, so anyone with the URL. |
+
+At the top, everything published right now: the internet-facing list first, each
+entry naming the local port *and the app* behind it, with **Stop** and (for a
+funnel) **Make tailnet-only**. Tunnels Rack did not start — a stray
+`cloudflared` from someone's `run-tunnel.bat` — are listed too, so they can't
+hide; close their window to stop them.
+
+**Share…** on any port picks a Tailscale port and shares it, **Tailnet** for
+tailnet-only or **Internet** for a public funnel. Ports already in use say which
+app has them. This works on any port on the machine, including things Rack
+doesn't run — unlike the per-process **Public** dropdown, which only covers Rack's
+own apps.
+
+> Run Rack as administrator to see the program behind system ports. Windows
+> hides the name and path of other users' processes from a normal user; the view
+> says so when that's the case.
 
 ## Checking for updates (⚙ → ⟲ Check for updates)
 

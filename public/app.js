@@ -1765,3 +1765,228 @@ function connectEvents() {
 
 loadPublic().then(() => refreshApps()).then(loadLogs).then(loadUpdates);
 connectEvents();
+
+/* ------------------------------------------------- what's exposed (menu) */
+
+// Rack already knows the ports of the apps it runs; this view covers the whole
+// machine, so a funnel on 8443 reads as "that's Immich" instead of ":2283".
+
+const expModal = $("exposure-modal");
+let expState = null;
+
+const REACH_LABEL = {
+  public: ["Internet", "exp-public"],
+  tailnet: ["Tailnet", "exp-tailnet"],
+  lan: ["Local network", "exp-lan"],
+  local: ["This PC only", "exp-local"],
+};
+
+const expEsc = (s) =>
+  String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+$("btn-exposure").onclick = () => {
+  settingsMenu.hidden = true;
+  expModal.hidden = false;
+  $("exp-body").innerHTML = "<p class='muted'>Reading this machine…</p>";
+  loadExposure();
+};
+$("exp-close").onclick = () => (expModal.hidden = true);
+$("exp-refresh").onclick = () => loadExposure();
+$("exp-hide-local").onchange = () => renderExposure();
+expModal.onclick = (e) => { if (e.target === expModal) expModal.hidden = true; };
+
+async function loadExposure() {
+  $("exp-refresh").disabled = true;
+  try {
+    expState = await api("/api/exposure");
+    renderExposure();
+  } catch {
+    $("exp-body").innerHTML = "<p class='muted'>Could not read the open ports.</p>";
+  } finally {
+    $("exp-refresh").disabled = false;
+  }
+}
+
+// What a port belongs to: the Rack app if Rack runs it, else the raw program.
+function expOwnerHtml(row) {
+  const bits = [];
+  if (row.owner) {
+    bits.push(`<b>${expEsc(row.owner.appName)}</b>`);
+    if (row.owner.procName) bits.push(`<span class="exp-dim">${expEsc(row.owner.procName)}</span>`);
+    if (row.process) bits.push(`<span class="exp-dim">${expEsc(row.process)}</span>`);
+  } else if (row.process) {
+    bits.push(expEsc(row.process));
+    if (row.pid) bits.push(`<span class="exp-dim">PID ${row.pid}</span>`);
+  } else {
+    bits.push("<span class='exp-dim'>Unknown program</span>");
+  }
+  const detail = row.owner ? null : row.path || row.command;
+  return bits.join(" · ") + (detail ? `<div class="exp-path" title="${expEsc(row.command || "")}">${expEsc(detail)}</div>` : "");
+}
+
+function expReachNote(row) {
+  const routes = [
+    ...row.shares.map((sh) => `Tailscale ${sh.isFunnel ? "Funnel" : "serve"} on ${sh.publicPort}`),
+    ...row.tunnels.map((t) => t.label + (t.managed ? " (Rack)" : "")),
+  ];
+  if (routes.length) return routes.join(" + ");
+  if (row.reach === "lan") return `Bound to ${row.addresses[0]}`;
+  return "";
+}
+
+function renderExposure() {
+  if (!expState) return;
+  const st = expState;
+  const hideLocal = $("exp-hide-local").checked;
+  const out = [];
+
+  const sub = [];
+  if (st.tailscale.available) sub.push(expEsc(st.tailscale.dnsName));
+  else if (st.tailscale.reason) sub.push(expEsc(st.tailscale.reason));
+  sub.push(`${st.listeners.length} listening ports`);
+  $("exp-sub").innerHTML = sub.join(" · ");
+
+  if (st.scanError) out.push(`<div class="exp-warn">${expEsc(st.scanError)}</div>`);
+  if (st.elevated === false)
+    out.push(
+      `<div class="exp-warn">Rack isn't running as administrator, so some system processes show without a name. Right-click <b>start.bat</b> → Run as administrator for the full picture.</div>`
+    );
+
+  // --- published right now -----------------------------------------------
+  const pub = [
+    ...st.shares.filter((sh) => sh.isFunnel).map((sh) => ({ kind: "share", sh })),
+    ...st.tunnels.map((t) => ({ kind: "tunnel", t })),
+  ];
+  if (pub.length) {
+    out.push(`<section class="exp-block exp-block-danger"><h4>Open to the internet</h4>`);
+    for (const item of pub) {
+      if (item.kind === "share") {
+        const sh = item.sh;
+        const who = sh.owner ? sh.owner.appName : sh.process || `port ${sh.localPort}`;
+        out.push(`<div class="exp-card">
+          <div><div class="exp-url">${expEsc(sh.url)}</div>
+          <div class="exp-dim">localhost:${sh.localPort} · ${expEsc(who)}</div></div>
+          <div class="exp-card-actions">
+            <button class="btn btn-ghost" data-tailnet="${sh.publicPort}">Make tailnet-only</button>
+            <button class="btn btn-danger-ghost" data-stop="${sh.publicPort}">Stop</button>
+          </div></div>`);
+      } else {
+        const t = item.t;
+        out.push(`<div class="exp-card">
+          <div><div class="exp-url">${expEsc(t.url || t.label)}</div>
+          <div class="exp-dim">${expEsc(
+            [t.appName && `${t.appName}${t.procName ? " · " + t.procName : ""}`, t.targetPort && `localhost:${t.targetPort}`,
+             t.managed ? "started by Rack" : "not started by Rack — close its window to stop it"]
+              .filter(Boolean).join(" · ")
+          )}</div></div></div>`);
+      }
+    }
+    out.push(`</section>`);
+  }
+
+  const tailnetOnly = st.shares.filter((sh) => !sh.isFunnel);
+  if (tailnetOnly.length) {
+    out.push(`<section class="exp-block"><h4>Shared on your tailnet</h4>`);
+    for (const sh of tailnetOnly) {
+      const who = sh.owner ? sh.owner.appName : sh.process || `port ${sh.localPort}`;
+      out.push(`<div class="exp-card">
+        <div><div class="exp-url">${expEsc(sh.url)}</div>
+        <div class="exp-dim">localhost:${sh.localPort} · ${expEsc(who)}</div></div>
+        <div class="exp-card-actions">
+          <button class="btn btn-danger-ghost" data-stop="${sh.publicPort}">Stop</button>
+        </div></div>`);
+    }
+    out.push(`</section>`);
+  }
+
+  // --- every port ----------------------------------------------------------
+  const rows = st.listeners.filter((r) => r.proto === "tcp" && !(hideLocal && r.reach === "local"));
+  out.push(`<section class="exp-block"><h4>Listening ports</h4><table class="exp-table"><tbody>`);
+  if (!rows.length) out.push(`<tr><td class="exp-dim">Nothing to show.</td></tr>`);
+  for (const row of rows) {
+    const [label, cls] = REACH_LABEL[row.reach];
+    const note = expReachNote(row);
+    const canShare = st.tailscale.available && !row.shares.length;
+    out.push(`<tr>
+      <td class="exp-port">${row.port}</td>
+      <td><span class="exp-badge ${cls}">${label}</span>${note ? `<div class="exp-dim">${expEsc(note)}</div>` : ""}</td>
+      <td>${expOwnerHtml(row)}</td>
+      <td class="exp-act">${
+        row.shares.length
+          ? `<button class="btn btn-danger-ghost" data-stop="${row.shares[0].publicPort}">Stop sharing</button>`
+          : canShare
+          ? `<button class="btn btn-ghost" data-share="${row.port}">Share…</button>`
+          : ""
+      }</td></tr>`);
+  }
+  out.push(`</tbody></table></section>`);
+
+  $("exp-body").innerHTML = out.join("");
+  wireExposureButtons();
+}
+
+function wireExposureButtons() {
+  const body = $("exp-body");
+  body.querySelectorAll("[data-stop]").forEach((b) => {
+    b.onclick = () => expPost({ publicPort: Number(b.dataset.stop), enable: false, mode: "serve" }, b);
+  });
+  body.querySelectorAll("[data-tailnet]").forEach((b) => {
+    // funnel off, serve left standing
+    b.onclick = () => expPost({ publicPort: Number(b.dataset.tailnet), enable: false, mode: "funnel" }, b);
+  });
+  body.querySelectorAll("[data-share]").forEach((b) => {
+    b.onclick = () => expShare(Number(b.dataset.share), b);
+  });
+}
+
+// Inline share controls, rather than a prompt() — same shape as the per-process
+// funnel picker in the app panel.
+function expShare(localPort, btn) {
+  const cell = btn.parentElement;
+  const ports = expState.tailscale.ports || [443, 8443, 10000];
+  const taken = new Map(expState.shares.map((sh) => [sh.publicPort, sh]));
+
+  const opts = ports
+    .map((port) => {
+      const owner = taken.get(port);
+      const note = owner ? ` — in use by ${owner.owner ? owner.owner.appName : "localhost:" + owner.localPort}` : "";
+      return `<option value="${port}"${owner ? " disabled" : ""}>${port}${note}</option>`;
+    })
+    .join("");
+
+  cell.innerHTML = `<div class="exp-share">
+      <select class="exp-share-port">${opts}</select>
+      <button class="btn btn-ghost" data-go="serve" title="Only devices on your tailnet">Tailnet</button>
+      <button class="btn btn-danger-ghost" data-go="funnel" title="Anyone with the URL, no login">Internet</button>
+      <button class="btn btn-ghost" data-cancel="1">✕</button>
+    </div>`;
+
+  const select = cell.querySelector(".exp-share-port");
+  const free = ports.find((port) => !taken.has(port));
+  if (free) select.value = String(free);
+
+  cell.querySelector("[data-cancel]").onclick = () => renderExposure();
+  cell.querySelectorAll("[data-go]").forEach((go) => {
+    go.onclick = () => {
+      const publicPort = Number(select.value);
+      const mode = go.dataset.go;
+      if (
+        mode === "funnel" &&
+        !confirm(`Open localhost:${localPort} to the whole internet on port ${publicPort}?\n\nAnyone with the URL will be able to reach it, with no login.`)
+      )
+        return;
+      expPost({ publicPort, localPort, enable: true, mode }, go);
+    };
+  });
+}
+
+async function expPost(body, btn) {
+  if (btn) btn.disabled = true;
+  const res = await api("/api/funnel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res && res.error) alert(res.error);
+  await loadExposure();
+}

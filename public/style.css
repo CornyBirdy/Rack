@@ -927,3 +927,88 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .advanced[open] summary::before { content: "\25be  "; }
 .advanced summary:hover { color: var(--fg); }
 .advanced > *:not(summary) { margin-top: 12px; }
+
+/* ============================= what's exposed ============================= */
+
+.modal-sub { margin: -6px 0 14px; color: var(--fg-muted); font-size: 0.85em; }
+.modal-actions .spacer { flex: 1; }
+
+.exp-body { max-height: 62vh; overflow-y: auto; margin-bottom: 14px; }
+
+.exp-warn {
+  padding: 8px 11px;
+  margin-bottom: 12px;
+  border: 1px solid var(--yellow);
+  border-radius: 6px;
+  font-size: 0.85em;
+  color: var(--fg);
+}
+
+.exp-block { margin-bottom: 18px; }
+.exp-block h4 {
+  margin: 0 0 8px;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+.exp-block-danger h4 { color: var(--red); }
+
+.exp-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 9px 11px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.exp-block-danger .exp-card { border-color: var(--red); }
+.exp-card-actions { display: flex; gap: 6px; }
+.exp-url { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; word-break: break-all; }
+.exp-dim { color: var(--fg-muted); font-size: 0.8em; }
+
+.exp-table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+.exp-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.exp-table tr:last-child td { border-bottom: none; }
+.exp-port { font-family: ui-monospace, Consolas, monospace; font-weight: 600; width: 1%; white-space: nowrap; }
+.exp-act { text-align: right; white-space: nowrap; width: 1%; }
+.exp-path {
+  color: var(--fg-muted);
+  font-size: 0.78em;
+  word-break: break-all;
+  max-width: 320px;
+  margin-top: 2px;
+}
+
+.exp-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.exp-public { background: var(--red-soft); color: var(--red); }
+.exp-tailnet { background: var(--accent-soft); color: var(--accent); }
+.exp-lan { background: var(--green-soft); color: var(--green); }
+.exp-local { background: var(--bg-sidebar); color: var(--fg-muted); }
+
+/* .modal label is a stacked form label; this one is an inline checkbox row. */
+.modal-actions { align-items: center; }
+.modal-actions .exp-filter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.82em;
+  font-weight: normal;
+  color: var(--fg-muted);
+}
+.modal-actions .exp-filter input { width: auto; margin: 0; }
+.exp-share { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
+.exp-share-port { padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel); color: var(--fg); font-size: 0.85em; }
