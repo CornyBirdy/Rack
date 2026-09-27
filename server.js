@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, exec, execFile, execSync } = require("child_process");
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -1277,10 +1277,10 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, await funnelState());
     }
 
-    // GET /api/exposure  → every listening port on this machine, with the
-    // program behind it and how far it reaches
+    // GET /api/exposure[?rescan=1]  → every listening port on this machine, the
+    // program behind it and how far it reaches, plus every way it can be exposed
     if (parts[1] === "exposure" && req.method === "GET") {
-      return sendJSON(res, 200, await exposureState());
+      return sendJSON(res, 200, await exposureState(url.searchParams.get("rescan") === "1"));
     }
 
     // GET /api/cf  → cloudflared availability, named tunnels, live tunnels
@@ -1511,7 +1511,9 @@ async function funnelState() {
 
 // mode "serve" shares on the tailnet only; the default "funnel" is public.
 // Funnel is limited to three ports by Tailscale; serve is not.
-async function setFunnel({ publicPort, localPort, enable, mode }) {
+// `replace` clears whatever the public port pointed at first, so it can be
+// re-pointed at a different local port in one go.
+async function setFunnel({ publicPort, localPort, enable, mode, replace }) {
   const pub = Number(publicPort);
   const verb = mode === "serve" ? "serve" : "funnel";
   if (!Number.isInteger(pub) || pub < 1 || pub > 65535)
@@ -1519,8 +1521,11 @@ async function setFunnel({ publicPort, localPort, enable, mode }) {
   if (verb === "funnel" && !FUNNEL_PORTS.includes(pub))
     return { ok: false, error: `Funnel only allows public ports ${FUNNEL_PORTS.join(", ")}.` };
   if (enable) {
-    if (!localPort) return { ok: false, error: "That process has no port to expose." };
-    const r = await tsExec(`${verb} --bg --https=${pub} localhost:${localPort}`);
+    const local = Number(localPort);
+    if (!Number.isInteger(local) || local < 1 || local > 65535)
+      return { ok: false, error: "That isn't a port that can be exposed." };
+    if (replace) await tsExec(`serve --https=${pub} off`);
+    const r = await tsExec(`${verb} --bg --https=${pub} localhost:${local}`);
     if (!r.ok) return { ok: false, error: r.err || `Failed to enable ${verb}.` };
   } else {
     // `serve off` drops the funnel with it; `funnel off` leaves the tailnet
@@ -2153,23 +2158,38 @@ async function scanListeners() {
   return { rows, elevated: null };
 }
 
-// port -> the Rack app and process sitting on it.
-function rackPortOwners() {
-  const byPort = new Map();
+// Every Rack process that has a port — what the manager can expose by name.
+function rackTargets() {
+  const out = [];
   for (const app of apps) {
     const slots = slotsFor(app);
     app.commands.forEach((cmd, i) => {
       const slot = slots[i];
-      const port = (slot && slot.proc && slot.effPort) || cmd.port;
+      const running = !!(slot && slot.proc);
+      const port = (running && slot.effPort) || cmd.port;
       if (!port) return;
-      byPort.set(Number(port), {
+      out.push({
         appId: app.id,
         appName: app.name,
         procName: cmd.name,
         cmdIndex: i,
-        running: !!(slot && slot.proc),
+        port: Number(port),
+        running,
+        cloudflare: cmd.cloudflare || null,
       });
     });
+  }
+  return out;
+}
+
+// port -> the Rack app and process sitting on it. Two apps can declare the same
+// port; the one actually running wins.
+function rackPortOwners(targets = rackTargets()) {
+  const byPort = new Map();
+  for (const t of targets) {
+    const prev = byPort.get(t.port);
+    if (prev && prev.running && !t.running) continue;
+    byPort.set(t.port, { appId: t.appId, appName: t.appName, procName: t.procName, cmdIndex: t.cmdIndex, running: t.running });
   }
   return byPort;
 }
@@ -2204,9 +2224,26 @@ function foreignTunnels(rows, rackPids) {
 
 const isLoopback = (addr) => addr === "::1" || /^127\./.test(addr || "");
 
-async function exposureState() {
-  const [scan, funnel] = await Promise.all([scanListeners(), funnelState()]);
-  const owners = rackPortOwners();
+// The port scan shells out to PowerShell and takes a few seconds, so it is
+// cached: exposing or stopping something doesn't change what's listening, and
+// the manager re-reads after every action. Opening it and Refresh rescan.
+let scanCache = { at: 0, promise: null, pending: false };
+function cachedScan(rescan) {
+  const stale = !scanCache.promise || Date.now() - scanCache.at > 120000;
+  if ((rescan || stale) && !scanCache.pending) {
+    const promise = scanListeners();
+    scanCache = { at: Date.now(), promise, pending: true };
+    promise.finally(() => {
+      if (scanCache.promise === promise) scanCache.pending = false;
+    });
+  }
+  return scanCache.promise;
+}
+
+async function exposureState(rescan) {
+  const [scan, funnel, cfs] = await Promise.all([cachedScan(rescan), funnelState(), cfState()]);
+  const targets = rackTargets();
+  const owners = rackPortOwners(targets);
   const shares = funnel.available ? funnel.active : [];
 
   const rackTunnels = [];
@@ -2218,6 +2255,7 @@ async function exposureState() {
     if (t.pid) rackPids.add(t.pid);
     rackTunnels.push({
       label: "Cloudflare Tunnel",
+      name: t.name,
       appName: app ? app.name : appId,
       procName: app && app.commands[idx] ? app.commands[idx].name : null,
       hostname: t.hostname,
@@ -2263,13 +2301,76 @@ async function exposureState() {
     })
     .sort((a, b) => a.port - b.port || a.proto.localeCompare(b.proto));
 
+  // What is actually behind a local port: the Rack app if Rack runs it, and the
+  // program the scan found listening there. `listening: false` on a port that is
+  // being published means the share points at nothing.
+  const whoOn = (port, owner) => {
+    if (!port) return null;
+    const l = listeners.find((r) => r.port === port && r.proto === "tcp");
+    return {
+      port,
+      owner: owner || owners.get(port) || null,
+      process: l ? l.process : null,
+      pid: l ? l.pid : null,
+      path: l ? l.path : null,
+      listening: !!l,
+    };
+  };
+
+  const sharesOut = shares.map((sh) => ({ ...sh, target: whoOn(sh.localPort) }));
+  const slotPorts = [...new Set([...FUNNEL_PORTS, ...shares.map((sh) => sh.publicPort)])].sort((a, b) => a - b);
+
+  // One entry per named tunnel, bound or not, so a free tunnel is something you
+  // can pick rather than something you have to remember exists.
+  const bound = targets.filter((t) => t.cloudflare && t.cloudflare.tunnel);
+  const names = [...new Set([...cfs.tunnels.map((t) => t.name), ...bound.map((t) => t.cloudflare.tunnel)])];
+  const cfTunnelsOut = names.sort().map((name) => {
+    const b = bound.find((t) => t.cloudflare.tunnel === name) || null;
+    const live = b ? tunnels.get(tKey(b.appId, b.cmdIndex)) : null;
+    const known = cfs.tunnels.find((t) => t.name === name);
+    const hostname = (b && b.cloudflare.hostname) || null;
+    return {
+      name,
+      hostname,
+      url: hostname ? `https://${hostname}` : null,
+      inAccount: !!known,
+      binding: b ? { appId: b.appId, cmdIndex: b.cmdIndex, auto: !!b.cloudflare.auto } : null,
+      target: b
+        ? whoOn(b.port, { appId: b.appId, appName: b.appName, procName: b.procName, cmdIndex: b.cmdIndex, running: b.running })
+        : null,
+      status: live ? live.status : !b ? "unused" : b.running ? "off" : "waiting",
+      error: (live && live.error) || null,
+    };
+  });
+
   return {
     generatedAt: new Date().toISOString(),
+    scannedAt: new Date(scanCache.at).toISOString(),
     elevated: scan.elevated,
     scanError: scan.error || null,
-    tailscale: { available: funnel.available, reason: funnel.reason || null, dnsName: funnel.dnsName || null, ports: funnel.ports || FUNNEL_PORTS },
-    shares: shares.map((sh) => ({ ...sh, owner: owners.get(sh.localPort) || null, process: (listeners.find((l) => l.port === sh.localPort && l.proto === "tcp") || {}).process || null })),
-    tunnels: [...rackTunnels, ...foreign],
+    tailscale: {
+      available: funnel.available,
+      reason: funnel.reason || null,
+      dnsName: funnel.dnsName || null,
+      ports: funnel.ports || FUNNEL_PORTS,
+      slots: funnel.available
+        ? slotPorts.map((p) => ({
+            publicPort: p,
+            funnelAllowed: FUNNEL_PORTS.includes(p),
+            url: publicUrl(funnel.dnsName, p, "/"),
+            shares: sharesOut.filter((sh) => sh.publicPort === p),
+          }))
+        : [],
+    },
+    cloudflare: {
+      available: cfs.available,
+      loggedIn: !!cfs.loggedIn,
+      reason: cfs.reason || null,
+      tunnels: cfTunnelsOut,
+    },
+    shares: sharesOut,
+    tunnels: [...rackTunnels, ...foreign].map((t) => ({ ...t, target: whoOn(t.targetPort) })),
+    targets: targets.map(({ cloudflare, ...t }) => t),
     listeners,
   };
 }

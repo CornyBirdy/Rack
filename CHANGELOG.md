@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.11.0
+- **"What's exposed" is now the ◎ Exposure manager.** It used to be a read-out
+  with a Share button bolted on; now it's where exposing things happens. One
+  **Expose** form at the top — what (a Rack process, any listening program, or a
+  typed port), to (tailnet, internet via Funnel, internet via Cloudflare) and on
+  (which Tailscale port or tunnel) — says what a busy port would replace and asks
+  before anything goes on the internet.
+- **Every exposure method shows what's using it.** Each Tailscale port (443,
+  8443, 10000, and any other you've shared) and each Cloudflare tunnel in your
+  account is listed, taken or free, with the **app and process** behind it — or
+  the program name and PID when Rack doesn't run it. A share pointing at a
+  stopped app, or at a port nothing is listening on, is flagged.
+- **Change a route in place:** Tailnet only / Open to internet / Stop on a
+  Tailscale port; auto, Connect / Disconnect, Log and Stop on a tunnel; Use… on
+  anything free.
+- **The per-process Public dropdown is gone.** A process's card now shows how
+  it's exposed (Funnel, tailnet, Cloudflare — with their URLs) and a
+  **◎ Exposure manager** button that opens the manager with that process picked.
+
 ## v0.10.0
 - **New: ⚙ → 🔒 What's exposed.** Rack knew the ports of the apps it runs, which
   left the rest of the machine a blank — a funnel on 8443 said `localhost:2283`

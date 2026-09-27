@@ -1012,3 +1012,76 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .modal-actions .exp-filter input { width: auto; margin: 0; }
 .exp-share { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
 .exp-share-port { padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel); color: var(--fg); font-size: 0.85em; }
+
+/* ============================= exposure manager ============================= */
+
+.exp-modal { width: 900px; }
+.exp-modal .btn-danger-ghost { margin-top: 0; }
+.exp-modal .btn-sm { padding: 4px 10px; font-size: 0.78rem; }
+.exp-host { text-transform: none; letter-spacing: 0; font-family: ui-monospace, Consolas, monospace; }
+.exp-red { color: var(--red); }
+
+.exp-new {
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.exp-new.flash { animation: exp-flash 0.9s ease-out; }
+@keyframes exp-flash { from { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); } }
+.exp-new-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.exp-new-line label { flex: 1 1 170px; min-width: 0; font-size: 0.78rem; }
+.exp-new-line label:first-child { flex: 2 1 240px; }
+.exp-new select,
+.exp-new input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--fg);
+  font-size: 0.85rem;
+  font-weight: normal;
+}
+.exp-new #exp-what-port { width: 96px; flex: none; }
+.exp-new #exp-go { flex: none; }
+.exp-new p { margin: 8px 0 0; }
+.exp-new .modal-error { margin-top: 8px; }
+
+.exp-modal .exp-table { table-layout: fixed; }
+.exp-modal .exp-table td:nth-child(1) { width: 92px; }
+.exp-modal .exp-table td:nth-child(2) { width: 150px; }
+.exp-modal .exp-table td:nth-child(4) { width: 270px; }
+.exp-modal .exp-table td:only-child { width: auto; }
+.exp-table tr.exp-hl td { background: var(--bg); }
+.exp-table tr.exp-hl td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.exp-free { background: transparent; border: 1px dashed var(--border); color: var(--fg-muted); }
+.exp-note { color: var(--yellow); font-size: 0.78em; margin-top: 3px; }
+.exp-table .exp-url { font-size: 0.8em; color: var(--accent); text-decoration: none; }
+.exp-table .exp-url:hover { text-decoration: underline; }
+.exp-act .btn + .btn, .exp-act .exp-auto + .btn { margin-left: 4px; }
+.exp-auto {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 4px !important;
+  margin-right: 4px;
+  font-size: 0.75rem !important;
+  font-weight: normal !important;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.exp-auto input { margin: 0; }
+
+/* details card: how this process is exposed */
+.funnel-live.tailnet { color: var(--accent); }
+.exp-route { display: inline-flex; align-items: center; gap: 8px; }
+.funnel-row .exp-open { margin-left: auto; }
+
+@media (max-width: 720px) {
+  .exp-body { max-height: none; overflow: visible; }
+  .exp-modal .exp-table { table-layout: auto; }
+  .exp-modal .exp-table td { width: auto !important; padding: 6px; }
+  .exp-act { white-space: normal; }
+}

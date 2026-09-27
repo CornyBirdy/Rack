@@ -786,8 +786,8 @@ function renderConflictBanner() {
 
 /* ------------------------------------------------------------- public access */
 
-// One row per process covering both providers. They're mutually exclusive on
-// purpose: a process has one public route, or none.
+// The details card only *shows* how a process is exposed; changing it happens
+// in the Exposure manager, which sees every route on the machine at once.
 
 let funnelInfo = { available: false, active: [] };
 let cfInfo = { available: false, tunnels: [], active: [] };
@@ -809,8 +809,8 @@ async function loadCf() {
   setCfMenuLabel();
 }
 
-// Cloudflare is hidden from the per-process dropdown until cloudflared exists,
-// so the ⚙ menu is where you find out the feature is there at all.
+// The ⚙ menu is where you find out Cloudflare is there at all before
+// cloudflared is installed.
 function setCfMenuLabel() {
   const b = $("btn-cf");
   if (!b) return;
@@ -825,35 +825,9 @@ $("btn-cf").onclick = () => {
 
 const loadPublic = () => Promise.all([loadFunnel(), loadCf()]);
 
-// Which public port (if any) is currently funnelling this process's local port.
-function funnelFor(localPort) {
-  return funnelInfo.active.find((a) => a.isFunnel && a.localPort === localPort) || null;
-}
-
 // The live cloudflared process for one command, if Rack is running one.
 function cfLiveFor(appId, idx) {
   return cfInfo.active.find((a) => a.appId === appId && a.cmdIndex === idx) || null;
-}
-
-// Which other process has already claimed a named tunnel — "App / process".
-function cfOwnerOf(name, appId, idx) {
-  for (const a of appsList)
-    for (let i = 0; i < a.commands.length; i++) {
-      const b = a.commands[i].cloudflare;
-      if (b && b.tunnel === name && !(a.id === appId && i === idx))
-        return `${a.name} / ${a.commands[i].name}`;
-    }
-  return null;
-}
-
-// `cloudflared tunnel list` doesn't report hostnames, so the hostname a tunnel
-// publishes on is only known from a binding Rack already stored.
-function cfHostnameOf(name) {
-  for (const a of appsList)
-    for (const c of a.commands)
-      if (c.cloudflare && c.cloudflare.tunnel === name && c.cloudflare.hostname)
-        return c.cloudflare.hostname;
-  return null;
 }
 
 function cfPost(path, body) {
@@ -864,192 +838,72 @@ function cfPost(path, body) {
   });
 }
 
-function renderPublicRow(row, app, cmd, idx) {
+// One line per process: every route it is published on, and a way in to the
+// manager with this process already picked.
+function renderExposureRow(row, app, cmd, idx) {
   if (!row) return;
-  // Only meaningful for a process that actually serves a port, on a machine
-  // where at least one provider exists.
-  if ((!funnelInfo.available && !cfInfo.available) || !cmd.effPort) {
+  if (!cmd.effPort) {
     row.hidden = true;
     return;
   }
   row.hidden = false;
   row.innerHTML = "";
 
-  const ts = funnelFor(cmd.effPort);
-  const bind = cmd.cloudflare;
-  const live = cfLiveFor(app.id, idx);
-
   const label = document.createElement("span");
   label.className = "funnel-label";
-  label.textContent = "Public";
+  label.textContent = "Exposure";
   row.appendChild(label);
 
-  const sel = document.createElement("select");
-  sel.className = "funnel-select";
-  sel.appendChild(new Option("Off", ""));
-
-  if (funnelInfo.available) {
-    const g = document.createElement("optgroup");
-    g.label = "Tailscale Funnel";
-    for (const p of funnelInfo.ports) {
-      // A public port already used by a *different* local port isn't selectable.
-      const taken = funnelInfo.active.find((a) => a.publicPort === p && a.localPort !== cmd.effPort);
-      const o = new Option(taken ? `${p} — in use` : String(p), `ts:${p}`);
-      if (taken) o.disabled = true;
-      g.appendChild(o);
-    }
-    sel.appendChild(g);
-  }
-
-  if (cfInfo.available) {
-    const g = document.createElement("optgroup");
-    g.label = "Cloudflare";
-    if (!cfInfo.loggedIn) {
-      g.appendChild(new Option("Set up Cloudflare…", "cf:setup"));
-    } else {
-      for (const t of cfInfo.tunnels) {
-        const owner = cfOwnerOf(t.name, app.id, idx);
-        const host = cfHostnameOf(t.name);
-        const text = owner ? `${t.name} — used by ${owner}` : host ? `${t.name} (${host})` : t.name;
-        const o = new Option(text, `cf:${t.name}`);
-        if (owner) o.disabled = true;
-        g.appendChild(o);
-      }
-      g.appendChild(new Option("＋ New tunnel…", "cf:new"));
-    }
-    sel.appendChild(g);
-  }
-
-  const current = bind && bind.tunnel ? `cf:${bind.tunnel}` : ts ? `ts:${ts.publicPort}` : "";
-  sel.value = current;
-
-  sel.onchange = async () => {
-    const next = sel.value;
-    if (next === "cf:setup" || next === "cf:new") {
-      sel.value = current; // these open a dialog rather than selecting anything
-      return next === "cf:setup" ? openCfSetup() : openCfModal(app, idx, null);
-    }
-    sel.disabled = true;
-    // One public route per process — clear whatever the other provider had.
-    if (bind && bind.tunnel && !next.startsWith("cf:")) {
-      await cfPost("/api/cf", { appId: app.id, cmdIndex: idx, tunnel: null });
-    }
-    if (ts && next !== `ts:${ts.publicPort}`) {
-      await cfPost("/api/funnel", { publicPort: ts.publicPort, enable: false });
-    }
-
-    let res = { ok: true };
-    if (next.startsWith("ts:")) {
-      res = await cfPost("/api/funnel", {
-        publicPort: Number(next.slice(3)),
-        localPort: cmd.effPort,
-        enable: true,
-      });
-    } else if (next.startsWith("cf:")) {
-      const name = next.slice(3);
-      const host = cfHostnameOf(name);
-      // A tunnel Rack has never published needs its hostname before it's useful.
-      if (!host) {
-        sel.disabled = false;
-        sel.value = current;
-        return openCfModal(app, idx, name);
-      }
-      res = await cfPost("/api/cf", {
-        appId: app.id,
-        cmdIndex: idx,
-        tunnel: name,
-        hostname: host,
-        auto: bind ? bind.auto : true,
-      });
-    }
-    if (res && res.error) alert("Public access: " + res.error);
-    await loadPublic();
-    await refreshApps();
+  // A route's badge and its link wrap as one.
+  let routes = 0;
+  const route = (...els) => {
+    routes++;
+    const span = document.createElement("span");
+    span.className = "exp-route";
+    for (const el of els) if (el) span.appendChild(el);
+    row.appendChild(span);
   };
-  row.appendChild(sel);
 
-  /* --- Tailscale: the daemon holds it up, so there's nothing to control --- */
-  if (ts && !(bind && bind.tunnel)) {
-    row.appendChild(publicLink(ts.url));
-    row.appendChild(publicBadge("● public", "on"));
-    return;
+  for (const sh of (funnelInfo.active || []).filter((a) => a.localPort === cmd.effPort)) {
+    route(
+      publicBadge(sh.isFunnel ? `● Internet · Funnel :${sh.publicPort}` : `● Tailnet · :${sh.publicPort}`, sh.isFunnel ? "on" : "tailnet"),
+      publicLink(sh.url, sh.isFunnel ? "Public URL ↗" : "Tailnet URL ↗")
+    );
   }
 
-  /* --- Cloudflare: Rack owns the process, so it gets real controls --- */
-  if (!bind || !bind.tunnel) return;
-
-  const status = live ? live.status : "off";
-  const connected = status === "public";
-
-  const auto = document.createElement("label");
-  auto.className = "funnel-auto";
-  auto.title = "Publish automatically whenever this process runs";
-  const box = document.createElement("input");
-  box.type = "checkbox";
-  box.checked = !!bind.auto;
-  box.onchange = async () => {
-    box.disabled = true;
-    await cfPost("/api/cf", {
-      appId: app.id,
-      cmdIndex: idx,
-      tunnel: bind.tunnel,
-      hostname: bind.hostname,
-      auto: box.checked,
-      connect: false,
-    });
-    await refreshApps();
-  };
-  auto.appendChild(box);
-  auto.appendChild(document.createTextNode("auto"));
-  row.appendChild(auto);
-
-  if (cmd.running) {
-    const btn = document.createElement("button");
-    btn.className = "btn btn-ghost btn-sm";
-    btn.textContent = connected || status === "connecting" ? "Disconnect" : "Connect";
-    btn.onclick = async () => {
-      btn.disabled = true;
-      const res = await cfPost("/api/cf/connect", {
-        appId: app.id,
-        cmdIndex: idx,
-        enable: !(connected || status === "connecting"),
-      });
-      if (res && res.error) alert("Cloudflare: " + res.error);
-      await loadPublic();
-      renderPanel();
-    };
-    row.appendChild(btn);
+  const bind = cmd.cloudflare;
+  if (bind && bind.tunnel) {
+    const live = cfLiveFor(app.id, idx);
+    const status = live ? live.status : "off";
+    const badge = !cmd.running
+      ? publicBadge(`○ Cloudflare ${bind.tunnel} · waits for the process`, "idle")
+      : status === "public"
+      ? publicBadge(`● Internet · Cloudflare ${bind.tunnel}`, "on")
+      : status === "connecting"
+      ? publicBadge(`◌ Cloudflare ${bind.tunnel} · connecting…`, "idle")
+      : status === "failed"
+      ? publicBadge(`● Cloudflare ${bind.tunnel} · failed`, "err")
+      : publicBadge(`○ Cloudflare ${bind.tunnel} · off`, "idle");
+    if (live && live.error) badge.title = live.error;
+    route(badge, bind.hostname && publicLink(`https://${bind.hostname}`, "Public URL ↗"));
   }
 
-  if (bind.hostname) row.appendChild(publicLink(`https://${bind.hostname}`));
+  if (!routes) route(publicBadge("Not exposed", "idle"));
 
-  const badge = !cmd.running
-    ? publicBadge("○ waits for the process", "idle")
-    : status === "connecting"
-    ? publicBadge("◌ connecting…", "idle")
-    : status === "failed"
-    ? publicBadge("● failed", "err")
-    : connected
-    ? publicBadge("● public", "on")
-    : publicBadge("○ off", "idle");
-  if (live && live.error) badge.title = live.error;
-  row.appendChild(badge);
-
-  if (live && (status === "failed" || live.error)) {
-    const log = document.createElement("button");
-    log.className = "btn btn-link funnel-url";
-    log.textContent = "log ↗";
-    log.onclick = () => openCfLog(app, idx);
-    row.appendChild(log);
-  }
+  const btn = document.createElement("button");
+  btn.className = "btn btn-ghost btn-sm exp-open";
+  btn.textContent = "◎ Exposure manager";
+  btn.title = "Share this process on your tailnet or the internet, or change how it's shared";
+  btn.onclick = () => openExposure({ appId: app.id, cmdIndex: idx });
+  row.appendChild(btn);
 }
 
-function publicLink(href) {
+function publicLink(href, text) {
   const a = document.createElement("a");
   a.className = "btn btn-link funnel-url";
   a.target = "_blank";
   a.href = href;
-  a.textContent = "Public URL ↗";
+  a.textContent = text || "Public URL ↗";
   a.title = href;
   return a;
 }
@@ -1161,7 +1015,7 @@ function renderDetails(app) {
       a.textContent = `${label} ↗`;
       links.appendChild(a);
     }
-    renderPublicRow(el.querySelector(".funnel-row"), app, cmd, idx);
+    renderExposureRow(el.querySelector(".funnel-row"), app, cmd, idx);
     wrap.appendChild(el);
   });
 }
@@ -1339,8 +1193,8 @@ async function cfRefreshSetup() {
     : !loggedIn
     ? "cloudflared is installed. Press Run to log in and pick your domain."
     : cfInfo.tunnels.length
-    ? "All set — pick a tunnel in a process's Public dropdown."
-    : "All set — open a process's Public dropdown and choose ＋ New tunnel…";
+    ? "All set — expose a process from ◎ Exposure manager → Internet — Cloudflare tunnel."
+    : "All set — in ◎ Exposure manager pick a process, Internet — Cloudflare tunnel, then ＋ New tunnel…";
 
   const done = { install: installed, login: loggedIn };
   cfSetupModal.querySelectorAll(".cf-run").forEach((b) => {
@@ -1464,6 +1318,7 @@ async function cfCreateDone(ev) {
   cfTarget = null;
   await loadPublic();
   await refreshApps();
+  expSoon(false);
 }
 
 async function openCfLog(app, idx) {
@@ -1640,6 +1495,9 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
+    // The manager opens Cloudflare dialogs on top of itself; Esc closes those first.
+    const stacked = [cfModal, cfSetupModal, cfLogModal].some((m) => !m.hidden);
+    if (!stacked) expModal.hidden = true;
     modal.hidden = true;
     updateModal.hidden = true;
     changelogModal.hidden = true;
@@ -1675,6 +1533,7 @@ function connectEvents() {
     } else if (ev.type === "status") {
       const i = appsList.findIndex((a) => a.id === ev.app.id);
       if (i >= 0) appsList[i] = ev.app;
+      expSoon(true); // a process started or stopped — its port came or went
       renderSidebar();
       if (ev.app.id === selectedId) {
         renderPanel();
@@ -1739,8 +1598,10 @@ function connectEvents() {
       loadUpdates();
     } else if (ev.type === "funnel") {
       loadFunnel().then(renderPanel);
+      expSoon(false);
     } else if (ev.type === "cf") {
       loadCf().then(renderPanel);
+      expSoon(false);
     } else if (ev.type === "cf-log") {
       appendLine($("cf-log"), ev.stream, ev.line);
     } else if (ev.type === "cf-done") {
@@ -1766,13 +1627,17 @@ function connectEvents() {
 loadPublic().then(() => refreshApps()).then(loadLogs).then(loadUpdates);
 connectEvents();
 
-/* ------------------------------------------------- what's exposed (menu) */
+/* ------------------------------------------------------- exposure manager */
 
-// Rack already knows the ports of the apps it runs; this view covers the whole
-// machine, so a funnel on 8443 reads as "that's Immich" instead of ":2283".
+// Every way something on this machine can be reached from off it, in one
+// place: each Tailscale port and Cloudflare tunnel with the app behind it, every
+// listening port with the program behind it, and a form to expose anything.
 
 const expModal = $("exposure-modal");
 let expState = null;
+let expFocus = null; // { appId, cmdIndex } when opened from a process's card
+let expSeq = 0;
+let expTimer = null;
 
 const REACH_LABEL = {
   public: ["Internet", "exp-public"],
@@ -1781,33 +1646,93 @@ const REACH_LABEL = {
   local: ["This PC only", "exp-local"],
 };
 
+const CF_STATUS = {
+  public: ["Internet", "exp-public"],
+  connecting: ["Connecting…", "exp-tailnet"],
+  failed: ["Failed", "exp-public"],
+  off: ["Off", "exp-local"],
+  waiting: ["Waits for the process", "exp-local"],
+  unused: ["Free", "exp-free"],
+};
+
 const expEsc = (s) =>
   String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-$("btn-exposure").onclick = () => {
+function openExposure(focus) {
   settingsMenu.hidden = true;
+  expFocus = focus || null;
   expModal.hidden = false;
-  $("exp-body").innerHTML = "<p class='muted'>Reading this machine…</p>";
-  loadExposure();
-};
+  $("exp-error").hidden = true;
+  if (focus) $("exp-what").dataset.want = `rack:${focus.cmdIndex}:${focus.appId}`;
+  if (!expState) $("exp-body").innerHTML = "<p class='muted'>Reading this machine…</p>";
+  else renderExposure();
+  loadExposure(true);
+}
+
+$("btn-exposure").onclick = () => openExposure(null);
 $("exp-close").onclick = () => (expModal.hidden = true);
-$("exp-refresh").onclick = () => loadExposure();
+$("exp-refresh").onclick = () => loadExposure(true);
 $("exp-hide-local").onchange = () => renderExposure();
 expModal.onclick = (e) => { if (e.target === expModal) expModal.hidden = true; };
 
-async function loadExposure() {
+// rescan re-reads the machine's ports (a few seconds on Windows); without it the
+// server reuses its last scan, which is all an expose or stop needs.
+async function loadExposure(rescan) {
+  const seq = ++expSeq;
   $("exp-refresh").disabled = true;
   try {
-    expState = await api("/api/exposure");
+    const st = await api("/api/exposure" + (rescan ? "?rescan=1" : ""));
+    if (seq !== expSeq) return;
+    expState = st;
     renderExposure();
   } catch {
-    $("exp-body").innerHTML = "<p class='muted'>Could not read the open ports.</p>";
+    if (seq === expSeq && !expState) $("exp-body").innerHTML = "<p class='muted'>Could not read the open ports.</p>";
   } finally {
-    $("exp-refresh").disabled = false;
+    if (seq === expSeq) $("exp-refresh").disabled = false;
   }
 }
 
-// What a port belongs to: the Rack app if Rack runs it, else the raw program.
+// Events arrive in bursts (a tunnel connecting, an app starting) — reload once.
+function expSoon(rescan) {
+  if (expModal.hidden) return;
+  clearTimeout(expTimer);
+  expTimer = setTimeout(() => loadExposure(rescan), rescan ? 2000 : 300);
+}
+
+const expIsFocus = (owner) =>
+  !!(expFocus && owner && owner.appId === expFocus.appId && owner.cmdIndex === expFocus.cmdIndex);
+
+// "Immich · server" for a Rack app, the program name otherwise.
+function expWhoText(w) {
+  if (!w) return "nothing";
+  if (w.owner) return `${w.owner.appName} · ${w.owner.procName}`;
+  if (w.process) return `${w.process} (localhost:${w.port})`;
+  return `localhost:${w.port}`;
+}
+
+// What a route points at: the Rack app and process if Rack runs it, else the
+// program found listening on the port.
+function expWhoHtml(w) {
+  if (!w) return `<span class="exp-dim">Not assigned to anything</span>`;
+  const bits = [];
+  if (w.owner) {
+    bits.push(`<b>${expEsc(w.owner.appName)}</b>`, `<span class="exp-dim">${expEsc(w.owner.procName)}</span>`);
+  } else if (w.process) {
+    bits.push(`<b>${expEsc(w.process)}</b>`);
+    if (w.pid) bits.push(`<span class="exp-dim">PID ${w.pid}</span>`);
+  } else {
+    bits.push(`<span class="exp-dim">Unknown program</span>`);
+  }
+  bits.push(`<span class="exp-dim">localhost:${w.port}</span>`);
+  let html = bits.join(" · ");
+  if (w.owner && !w.owner.running) html += `<div class="exp-note">Stopped — nothing answers until it runs.</div>`;
+  else if (!w.owner && !w.listening && !(expState && expState.scanError))
+    html += `<div class="exp-note">Nothing is listening on ${w.port} — this points at nothing.</div>`;
+  if (!w.owner && w.path) html += `<div class="exp-path">${expEsc(w.path)}</div>`;
+  return html;
+}
+
+// What a listening port belongs to, for the ports table.
 function expOwnerHtml(row) {
   const bits = [];
   if (row.owner) {
@@ -1827,7 +1752,7 @@ function expOwnerHtml(row) {
 function expReachNote(row) {
   const routes = [
     ...row.shares.map((sh) => `Tailscale ${sh.isFunnel ? "Funnel" : "serve"} on ${sh.publicPort}`),
-    ...row.tunnels.map((t) => t.label + (t.managed ? " (Rack)" : "")),
+    ...row.tunnels.map((t) => t.label + (t.managed ? ` ${t.name || ""} (Rack)` : "")),
   ];
   if (routes.length) return routes.join(" + ");
   if (row.reach === "lan") return `Bound to ${row.addresses[0]}`;
@@ -1837,13 +1762,16 @@ function expReachNote(row) {
 function renderExposure() {
   if (!expState) return;
   const st = expState;
-  const hideLocal = $("exp-hide-local").checked;
   const out = [];
 
-  const sub = [];
-  if (st.tailscale.available) sub.push(expEsc(st.tailscale.dnsName));
-  else if (st.tailscale.reason) sub.push(expEsc(st.tailscale.reason));
-  sub.push(`${st.listeners.length} listening ports`);
+  const openCount =
+    st.shares.filter((sh) => sh.isFunnel).length + st.tunnels.filter((t) => !t.managed || t.status === "public").length;
+  const tailnetCount = st.shares.filter((sh) => !sh.isFunnel).length;
+  const sub = [
+    openCount ? `<b class="exp-red">${openCount} open to the internet</b>` : "Nothing open to the internet",
+    `${tailnetCount} on your tailnet only`,
+    `${st.listeners.filter((r) => r.proto === "tcp").length} listening ports`,
+  ];
   $("exp-sub").innerHTML = sub.join(" · ");
 
   if (st.scanError) out.push(`<div class="exp-warn">${expEsc(st.scanError)}</div>`);
@@ -1852,141 +1780,416 @@ function renderExposure() {
       `<div class="exp-warn">Rack isn't running as administrator, so some system processes show without a name. Right-click <b>start.bat</b> → Run as administrator for the full picture.</div>`
     );
 
-  // --- published right now -----------------------------------------------
-  const pub = [
-    ...st.shares.filter((sh) => sh.isFunnel).map((sh) => ({ kind: "share", sh })),
-    ...st.tunnels.map((t) => ({ kind: "tunnel", t })),
-  ];
-  if (pub.length) {
-    out.push(`<section class="exp-block exp-block-danger"><h4>Open to the internet</h4>`);
-    for (const item of pub) {
-      if (item.kind === "share") {
-        const sh = item.sh;
-        const who = sh.owner ? sh.owner.appName : sh.process || `port ${sh.localPort}`;
-        out.push(`<div class="exp-card">
-          <div><div class="exp-url">${expEsc(sh.url)}</div>
-          <div class="exp-dim">localhost:${sh.localPort} · ${expEsc(who)}</div></div>
-          <div class="exp-card-actions">
-            <button class="btn btn-ghost" data-tailnet="${sh.publicPort}">Make tailnet-only</button>
-            <button class="btn btn-danger-ghost" data-stop="${sh.publicPort}">Stop</button>
-          </div></div>`);
-      } else {
-        const t = item.t;
-        out.push(`<div class="exp-card">
-          <div><div class="exp-url">${expEsc(t.url || t.label)}</div>
-          <div class="exp-dim">${expEsc(
-            [t.appName && `${t.appName}${t.procName ? " · " + t.procName : ""}`, t.targetPort && `localhost:${t.targetPort}`,
-             t.managed ? "started by Rack" : "not started by Rack — close its window to stop it"]
-              .filter(Boolean).join(" · ")
-          )}</div></div></div>`);
+  // --- Tailscale: every port, taken or free -----------------------------------
+  const ts = st.tailscale;
+  out.push(`<section class="exp-block"><h4>Tailscale${ts.available ? ` · <span class="exp-host">${expEsc(ts.dnsName)}</span>` : ""}</h4>`);
+  if (!ts.available) {
+    out.push(`<p class="exp-dim">${expEsc(ts.reason || "Tailscale isn't available.")}</p>`);
+  } else {
+    out.push(`<table class="exp-table"><tbody>`);
+    for (const slot of ts.slots) {
+      if (!slot.shares.length) {
+        out.push(`<tr>
+          <td class="exp-port">${slot.publicPort}</td>
+          <td><span class="exp-badge exp-free">Free</span></td>
+          <td><span class="exp-dim">${slot.funnelAllowed ? "Can be shared on your tailnet or opened to the internet" : "Tailnet only"}</span></td>
+          <td class="exp-act"><button class="btn btn-ghost btn-sm" data-use-ts="${slot.publicPort}">Use…</button></td>
+        </tr>`);
+        continue;
+      }
+      for (const sh of slot.shares) {
+        const [label, cls] = sh.isFunnel ? ["Internet", "exp-public"] : ["Tailnet", "exp-tailnet"];
+        const path = sh.path && sh.path !== "/" ? ` <span class="exp-dim">${expEsc(sh.path)}</span>` : "";
+        out.push(`<tr class="${expIsFocus(sh.target && sh.target.owner) ? "exp-hl" : ""}">
+          <td class="exp-port">${slot.publicPort}${path}</td>
+          <td><span class="exp-badge ${cls}">${label}</span><div class="exp-dim">${sh.isFunnel ? "Funnel" : "serve"}</div></td>
+          <td>${expWhoHtml(sh.target)}<div><a class="exp-url" href="${expEsc(sh.url)}" target="_blank">${expEsc(sh.url)} ↗</a></div></td>
+          <td class="exp-act">
+            ${sh.isFunnel
+              ? `<button class="btn btn-ghost btn-sm" data-tailnet="${slot.publicPort}" title="Take it off the internet, keep it on your tailnet">Tailnet only</button>`
+              : slot.funnelAllowed
+              ? `<button class="btn btn-danger-ghost btn-sm" data-funnel="${slot.publicPort}" data-local="${sh.localPort}">Open to internet</button>`
+              : ""}
+            <button class="btn btn-danger-ghost btn-sm" data-stop="${slot.publicPort}">Stop</button>
+          </td>
+        </tr>`);
       }
     }
-    out.push(`</section>`);
+    out.push(`</tbody></table>`);
   }
+  out.push(`</section>`);
 
-  const tailnetOnly = st.shares.filter((sh) => !sh.isFunnel);
-  if (tailnetOnly.length) {
-    out.push(`<section class="exp-block"><h4>Shared on your tailnet</h4>`);
-    for (const sh of tailnetOnly) {
-      const who = sh.owner ? sh.owner.appName : sh.process || `port ${sh.localPort}`;
-      out.push(`<div class="exp-card">
-        <div><div class="exp-url">${expEsc(sh.url)}</div>
-        <div class="exp-dim">localhost:${sh.localPort} · ${expEsc(who)}</div></div>
-        <div class="exp-card-actions">
-          <button class="btn btn-danger-ghost" data-stop="${sh.publicPort}">Stop</button>
-        </div></div>`);
+  // --- Cloudflare: every named tunnel, assigned or free ---------------------
+  const cf = st.cloudflare;
+  out.push(`<section class="exp-block"><h4>Cloudflare tunnels</h4>`);
+  if (!cf.available || !cf.loggedIn) {
+    out.push(`<p class="exp-dim">${expEsc(cf.available ? "cloudflared is installed but not logged in yet." : cf.reason || "cloudflared isn't installed.")}
+      <button class="btn btn-ghost btn-sm" data-cf-setup="1">Set up Cloudflare</button></p>`);
+  } else if (!cf.tunnels.length) {
+    out.push(`<p class="exp-dim">No tunnels yet — pick a Rack app above, <b>Internet — Cloudflare</b>, then <b>＋ New tunnel…</b></p>`);
+  } else {
+    out.push(`<table class="exp-table"><tbody>`);
+    for (const t of cf.tunnels) {
+      const [label, cls] = CF_STATUS[t.status] || CF_STATUS.off;
+      const b = t.binding;
+      const running = !!(t.target && t.target.owner && t.target.owner.running);
+      const up = t.status === "public" || t.status === "connecting";
+      out.push(`<tr class="${expIsFocus(t.target && t.target.owner) ? "exp-hl" : ""}">
+        <td class="exp-port">${expEsc(t.name)}</td>
+        <td><span class="exp-badge ${cls}" title="${expEsc(t.error || "")}">${label}</span></td>
+        <td>${b ? expWhoHtml(t.target) : `<span class="exp-dim">Not assigned to anything</span>`}
+          ${t.url ? `<div><a class="exp-url" href="${expEsc(t.url)}" target="_blank">${expEsc(t.url)} ↗</a></div>` : ""}
+          ${t.error ? `<div class="exp-note">${expEsc(t.error)}</div>` : ""}
+          ${!t.inAccount ? `<div class="exp-note">Not found in your Cloudflare account.</div>` : ""}</td>
+        <td class="exp-act">${
+          b
+            ? `<label class="exp-auto" title="Bring the tunnel up whenever the process runs"><input type="checkbox" data-cf-auto="${expEsc(t.name)}"${b.auto ? " checked" : ""} /> auto</label>
+               ${running ? `<button class="btn btn-ghost btn-sm" data-cf-connect="${expEsc(t.name)}" data-enable="${up ? "" : "1"}">${up ? "Disconnect" : "Connect"}</button>` : ""}
+               ${t.status === "failed" || t.error ? `<button class="btn btn-ghost btn-sm" data-cf-log="${expEsc(t.name)}">Log</button>` : ""}
+               <button class="btn btn-danger-ghost btn-sm" data-cf-unbind="${expEsc(t.name)}" title="Stop the tunnel and free it">Stop</button>`
+            : `<button class="btn btn-ghost btn-sm" data-use-cf="${expEsc(t.name)}">Use…</button>`
+        }</td>
+      </tr>`);
     }
-    out.push(`</section>`);
+    out.push(`</tbody></table>`);
+  }
+  out.push(`</section>`);
+
+  // --- tunnels Rack didn't start --------------------------------------------
+  const foreign = st.tunnels.filter((t) => !t.managed);
+  if (foreign.length) {
+    out.push(`<section class="exp-block exp-block-danger"><h4>Tunnels Rack didn't start</h4><table class="exp-table"><tbody>`);
+    for (const t of foreign) {
+      out.push(`<tr>
+        <td class="exp-port">${expEsc(t.label)}</td>
+        <td><span class="exp-badge exp-public">Internet</span><div class="exp-dim">PID ${expEsc(t.pid)}</div></td>
+        <td>${t.target ? expWhoHtml(t.target) : `<span class="exp-dim">Couldn't tell which port it publishes</span>`}
+          ${t.url ? `<div class="exp-path">${expEsc(t.url)}</div>` : ""}
+          <div class="exp-path" title="${expEsc(t.command || "")}">${expEsc(t.command || "")}</div></td>
+        <td class="exp-act exp-dim">Close its window to stop it</td>
+      </tr>`);
+    }
+    out.push(`</tbody></table></section>`);
   }
 
-  // --- every port ----------------------------------------------------------
+  // --- every port -------------------------------------------------------------
+  const hideLocal = $("exp-hide-local").checked;
   const rows = st.listeners.filter((r) => r.proto === "tcp" && !(hideLocal && r.reach === "local"));
   out.push(`<section class="exp-block"><h4>Listening ports</h4><table class="exp-table"><tbody>`);
   if (!rows.length) out.push(`<tr><td class="exp-dim">Nothing to show.</td></tr>`);
   for (const row of rows) {
     const [label, cls] = REACH_LABEL[row.reach];
     const note = expReachNote(row);
-    const canShare = st.tailscale.available && !row.shares.length;
-    out.push(`<tr>
+    out.push(`<tr class="${expIsFocus(row.owner) ? "exp-hl" : ""}">
       <td class="exp-port">${row.port}</td>
       <td><span class="exp-badge ${cls}">${label}</span>${note ? `<div class="exp-dim">${expEsc(note)}</div>` : ""}</td>
       <td>${expOwnerHtml(row)}</td>
-      <td class="exp-act">${
-        row.shares.length
-          ? `<button class="btn btn-danger-ghost" data-stop="${row.shares[0].publicPort}">Stop sharing</button>`
-          : canShare
-          ? `<button class="btn btn-ghost" data-share="${row.port}">Share…</button>`
-          : ""
-      }</td></tr>`);
+      <td class="exp-act"><button class="btn btn-ghost btn-sm" data-expose="${row.port}">Expose…</button></td></tr>`);
   }
   out.push(`</tbody></table></section>`);
 
   $("exp-body").innerHTML = out.join("");
   wireExposureButtons();
+  renderExpForm();
 }
 
 function wireExposureButtons() {
   const body = $("exp-body");
-  body.querySelectorAll("[data-stop]").forEach((b) => {
-    b.onclick = () => expPost({ publicPort: Number(b.dataset.stop), enable: false, mode: "serve" }, b);
+  const on = (attr, fn) => body.querySelectorAll(`[${attr}]`).forEach((b) => (b.onclick = () => fn(b)));
+  const cfTunnel = (name) => expState.cloudflare.tunnels.find((t) => t.name === name);
+
+  on("data-stop", (b) => {
+    const p = Number(b.dataset.stop);
+    const slot = expState.tailscale.slots.find((s) => s.publicPort === p);
+    const who = slot && slot.shares[0] ? expWhoText(slot.shares[0].target) : `port ${p}`;
+    if (!confirm(`Stop sharing ${who} on Tailscale port ${p}?`)) return;
+    expFunnel({ publicPort: p, enable: false, mode: "serve" }, b);
   });
-  body.querySelectorAll("[data-tailnet]").forEach((b) => {
-    // funnel off, serve left standing
-    b.onclick = () => expPost({ publicPort: Number(b.dataset.tailnet), enable: false, mode: "funnel" }, b);
+  // funnel off, serve left standing
+  on("data-tailnet", (b) => expFunnel({ publicPort: Number(b.dataset.tailnet), enable: false, mode: "funnel" }, b));
+  on("data-funnel", (b) => {
+    const p = Number(b.dataset.funnel);
+    const local = Number(b.dataset.local);
+    if (!confirm(`Open localhost:${local} to the whole internet on port ${p}?\n\nAnyone with the URL will be able to reach it, with no login.`)) return;
+    expFunnel({ publicPort: p, localPort: local, enable: true, mode: "funnel" }, b);
   });
-  body.querySelectorAll("[data-share]").forEach((b) => {
-    b.onclick = () => expShare(Number(b.dataset.share), b);
+  on("data-use-ts", (b) => {
+    const p = b.dataset.useTs;
+    const slot = expState.tailscale.slots.find((s) => String(s.publicPort) === p);
+    expPick({ how: slot && slot.funnelAllowed ? "funnel" : "tailnet", on: p });
   });
-}
+  on("data-use-cf", (b) => expPick({ how: "cf", on: `cf:${b.dataset.useCf}` }));
+  on("data-expose", (b) => {
+    const port = Number(b.dataset.expose);
+    const t = expState.targets.find((x) => x.port === port);
+    expPick({ what: t ? `rack:${t.cmdIndex}:${t.appId}` : `port:${port}` });
+  });
+  on("data-cf-setup", () => openCfSetup());
 
-// Inline share controls, rather than a prompt() — same shape as the per-process
-// funnel picker in the app panel.
-function expShare(localPort, btn) {
-  const cell = btn.parentElement;
-  const ports = expState.tailscale.ports || [443, 8443, 10000];
-  const taken = new Map(expState.shares.map((sh) => [sh.publicPort, sh]));
-
-  const opts = ports
-    .map((port) => {
-      const owner = taken.get(port);
-      const note = owner ? ` — in use by ${owner.owner ? owner.owner.appName : "localhost:" + owner.localPort}` : "";
-      return `<option value="${port}"${owner ? " disabled" : ""}>${port}${note}</option>`;
-    })
-    .join("");
-
-  cell.innerHTML = `<div class="exp-share">
-      <select class="exp-share-port">${opts}</select>
-      <button class="btn btn-ghost" data-go="serve" title="Only devices on your tailnet">Tailnet</button>
-      <button class="btn btn-danger-ghost" data-go="funnel" title="Anyone with the URL, no login">Internet</button>
-      <button class="btn btn-ghost" data-cancel="1">✕</button>
-    </div>`;
-
-  const select = cell.querySelector(".exp-share-port");
-  const free = ports.find((port) => !taken.has(port));
-  if (free) select.value = String(free);
-
-  cell.querySelector("[data-cancel]").onclick = () => renderExposure();
-  cell.querySelectorAll("[data-go]").forEach((go) => {
-    go.onclick = () => {
-      const publicPort = Number(select.value);
-      const mode = go.dataset.go;
-      if (
-        mode === "funnel" &&
-        !confirm(`Open localhost:${localPort} to the whole internet on port ${publicPort}?\n\nAnyone with the URL will be able to reach it, with no login.`)
-      )
-        return;
-      expPost({ publicPort, localPort, enable: true, mode }, go);
+  on("data-cf-connect", async (b) => {
+    const t = cfTunnel(b.dataset.cfConnect);
+    if (!t || !t.binding) return;
+    b.disabled = true;
+    const res = await cfPost("/api/cf/connect", { ...t.binding, enable: !!b.dataset.enable });
+    if (res && res.error) alert("Cloudflare: " + res.error);
+    await expAfter();
+  });
+  on("data-cf-unbind", async (b) => {
+    const t = cfTunnel(b.dataset.cfUnbind);
+    if (!t || !t.binding) return;
+    if (!confirm(`Stop tunnel "${t.name}" and take it off ${expWhoText(t.target)}?`)) return;
+    b.disabled = true;
+    const res = await cfPost("/api/cf", { appId: t.binding.appId, cmdIndex: t.binding.cmdIndex, tunnel: null });
+    if (res && res.error) alert("Cloudflare: " + res.error);
+    await expAfter();
+  });
+  on("data-cf-log", (b) => {
+    const t = cfTunnel(b.dataset.cfLog);
+    const app = t && t.binding && appsList.find((a) => a.id === t.binding.appId);
+    if (app) openCfLog(app, t.binding.cmdIndex);
+  });
+  body.querySelectorAll("[data-cf-auto]").forEach((box) => {
+    box.onchange = async () => {
+      const t = cfTunnel(box.dataset.cfAuto);
+      if (!t || !t.binding) return;
+      box.disabled = true;
+      await cfPost("/api/cf", {
+        appId: t.binding.appId,
+        cmdIndex: t.binding.cmdIndex,
+        tunnel: t.name,
+        hostname: t.hostname,
+        auto: box.checked,
+        connect: false,
+      });
+      await expAfter();
     };
   });
 }
 
-async function expPost(body, btn) {
+async function expFunnel(body, btn) {
   if (btn) btn.disabled = true;
-  const res = await api("/api/funnel", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await cfPost("/api/funnel", body);
   if (res && res.error) alert(res.error);
-  await loadExposure();
+  await expAfter();
 }
+
+// After any change: the manager, and the process cards behind it.
+async function expAfter() {
+  await Promise.all([loadExposure(false), loadPublic()]);
+  await refreshApps();
+}
+
+/* ---- the "Expose" form: what → how → where ---- */
+
+// Pre-select parts of the form (from a Use… or Expose… button) and bring it into view.
+function expPick({ what, how, on }) {
+  if (what) $("exp-what").dataset.want = what;
+  if (how) $("exp-how").dataset.want = how;
+  if (on) $("exp-on").dataset.want = on;
+  renderExpForm();
+  $("exp-new").classList.remove("flash");
+  void $("exp-new").offsetWidth;
+  $("exp-new").classList.add("flash");
+  $("exp-what").focus();
+}
+
+// Rebuild a <select>'s options, keeping the choice (or a requested one) if it still exists.
+function expFill(sel, items) {
+  const asked = sel.dataset.want;
+  delete sel.dataset.want;
+  const want = asked || sel.value;
+  sel.innerHTML = "";
+  for (const it of items) {
+    if (it.group) {
+      const g = document.createElement("optgroup");
+      g.label = it.group;
+      for (const o of it.options) g.appendChild(expOption(o));
+      if (it.options.length) sel.appendChild(g);
+    } else sel.appendChild(expOption(it));
+  }
+  const opts = [...sel.options].filter((o) => !o.disabled);
+  // A choice that has become a no-op ("already this") isn't worth keeping.
+  const kept = opts.find((o) => o.value === want && (asked || !o.dataset.noop));
+  const pick = kept || opts.find((o) => o.dataset.prefer) || opts[0];
+  if (pick) sel.value = pick.value;
+}
+function expOption({ value, text, disabled, prefer, noop }) {
+  const o = new Option(text, value);
+  o.disabled = !!disabled;
+  if (prefer) o.dataset.prefer = "1"; // the default when nothing was picked yet
+  if (noop) o.dataset.noop = "1";
+  return o;
+}
+
+// The thing the form would expose: a Rack process, or a bare port.
+function expTarget() {
+  const st = expState;
+  const v = $("exp-what").value;
+  const m = /^rack:(\d+):(.*)$/.exec(v);
+  if (m) {
+    const t = st.targets.find((x) => x.appId === m[2] && x.cmdIndex === Number(m[1]));
+    return t ? { kind: "rack", ...t } : null;
+  }
+  const port = v === "other" ? Number($("exp-what-port").value) : Number(v.replace(/^port:/, ""));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { kind: "port", port };
+}
+
+function renderExpForm() {
+  const st = expState;
+  if (!st) return;
+  const ts = st.tailscale;
+  const cf = st.cloudflare;
+
+  // what
+  const rackPorts = new Set(st.targets.map((t) => t.port));
+  const others = new Map();
+  for (const r of st.listeners)
+    if (r.proto === "tcp" && !rackPorts.has(r.port) && !others.has(r.port)) others.set(r.port, r);
+  expFill($("exp-what"), [
+    {
+      group: "Rack apps",
+      options: st.targets.map((t) => ({
+        value: `rack:${t.cmdIndex}:${t.appId}`,
+        text: `${t.appName} · ${t.procName} — :${t.port}${t.running ? "" : " (stopped)"}`,
+      })),
+    },
+    {
+      group: "Other programs listening",
+      options: [...others.values()].map((r) => ({ value: `port:${r.port}`, text: `:${r.port} — ${r.process || "unknown program"}` })),
+    },
+    { group: "Anything else", options: [{ value: "other", text: "Another port…" }] },
+  ]);
+  $("exp-what-port").hidden = $("exp-what").value !== "other";
+
+  const target = expTarget();
+  const isRack = !!(target && target.kind === "rack");
+
+  // how
+  const noTs = ts.available ? "" : " — Tailscale not available";
+  expFill($("exp-how"), [
+    { value: "tailnet", text: `Tailnet only (Tailscale)${noTs}`, disabled: !ts.available },
+    { value: "funnel", text: `Internet (Tailscale Funnel)${noTs}`, disabled: !ts.available },
+    { value: "cf", text: `Internet (Cloudflare)${isRack ? "" : " — Rack apps only"}`, disabled: !isRack },
+  ]);
+  const how = $("exp-how").value;
+
+  // where
+  let where = [];
+  if (how === "tailnet" || how === "funnel") {
+    where = ts.slots
+      .filter((s) => how === "tailnet" || s.funnelAllowed)
+      .map((s) => {
+        const sh = s.shares[0];
+        const same = sh && target && sh.localPort === target.port;
+        const text = !sh
+          ? `Port ${s.publicPort} — free`
+          : same
+          ? `Port ${s.publicPort} — already this (${sh.isFunnel ? "internet" : "tailnet"})`
+          : `Port ${s.publicPort} — replaces ${expWhoText(sh.target)}`;
+        return { value: String(s.publicPort), text, prefer: !sh, noop: same && sh.isFunnel === (how === "funnel") };
+      });
+  } else if (how === "cf") {
+    if (!cf.available || !cf.loggedIn) where = [{ value: "cf:setup", text: "Set up Cloudflare first…" }];
+    else {
+      where = cf.tunnels.map((t) => {
+        const mine = t.binding && target && t.binding.appId === target.appId && t.binding.cmdIndex === target.cmdIndex;
+        const text = mine
+          ? `${t.name} — already this`
+          : t.binding
+          ? `${t.name} — used by ${expWhoText(t.target)}`
+          : `${t.name}${t.hostname ? ` (${t.hostname})` : ""} — free`;
+        return { value: `cf:${t.name}`, text, disabled: !!t.binding && !mine, prefer: !t.binding && !!t.hostname, noop: mine };
+      });
+      where.push({ value: "cf:new", text: "＋ New tunnel…" });
+    }
+  }
+  expFill($("exp-on"), where);
+
+  const go = $("exp-go");
+  const internet = how === "funnel" || how === "cf";
+  const setup = $("exp-on").value === "cf:setup";
+  go.className = "btn " + (setup ? "btn-ghost" : internet ? "btn-kill" : "btn-run");
+  go.textContent = setup ? "Set up Cloudflare…" : how === "tailnet" ? "Share on tailnet" : "Open to internet";
+  go.disabled = !target || !$("exp-on").value || $("exp-how").selectedOptions[0]?.disabled;
+  $("exp-new-note").textContent = !target
+    ? $("exp-what").value === "other"
+      ? "Type the local port to expose."
+      : "Nothing to expose yet."
+    : !ts.available && !(cf.available && cf.loggedIn)
+    ? "Install Tailscale, or set up Cloudflare from the ⚙ menu, to expose anything."
+    : internet
+    ? "Anyone with the URL can reach it — no login."
+    : "Only devices signed in to your tailnet can reach it.";
+}
+
+// The rows belonging to whatever the form is about to expose stay highlighted.
+$("exp-what").onchange = () => {
+  $("exp-error").hidden = true;
+  const t = expTarget();
+  expFocus = t && t.kind === "rack" ? { appId: t.appId, cmdIndex: t.cmdIndex } : null;
+  renderExposure();
+  if ($("exp-what").value === "other") $("exp-what-port").focus();
+};
+$("exp-what-port").oninput = () => renderExpForm();
+$("exp-how").onchange = () => { $("exp-error").hidden = true; renderExpForm(); };
+$("exp-on").onchange = () => { $("exp-error").hidden = true; renderExpForm(); };
+
+function expFail(msg) {
+  $("exp-error").textContent = msg;
+  $("exp-error").hidden = false;
+}
+
+$("exp-go").onclick = async () => {
+  const st = expState;
+  const target = expTarget();
+  const how = $("exp-how").value;
+  const on = $("exp-on").value;
+  if (!st || !target || !on) return;
+  $("exp-error").hidden = true;
+  const name = target.kind === "rack" ? `${target.appName} · ${target.procName}` : `localhost:${target.port}`;
+
+  if (how === "cf") {
+    if (on === "cf:setup") return openCfSetup();
+    const app = appsList.find((a) => a.id === target.appId);
+    if (!app) return expFail("That app is gone — refresh.");
+    if (on === "cf:new") return openCfModal(app, target.cmdIndex, null);
+    const tunnel = on.slice(3);
+    const t = st.cloudflare.tunnels.find((x) => x.name === tunnel);
+    if (t && t.binding && t.binding.appId === target.appId && t.binding.cmdIndex === target.cmdIndex)
+      return expFail(`${name} is already on tunnel "${tunnel}".`);
+    // A tunnel Rack has never published needs its hostname before it's useful.
+    if (!t || !t.hostname) return openCfModal(app, target.cmdIndex, tunnel);
+    const prev = target.cloudflare && target.cloudflare.tunnel;
+    const moving = prev && prev !== tunnel ? `\n\nIt moves off tunnel "${prev}".` : "";
+    if (!confirm(`Open ${name} to the whole internet at https://${t.hostname}?${moving}\n\nAnyone with the URL will be able to reach it.`)) return;
+    $("exp-go").disabled = true;
+    const res = await cfPost("/api/cf", { appId: target.appId, cmdIndex: target.cmdIndex, tunnel, hostname: t.hostname, auto: true });
+    if (res && res.error) expFail(res.error);
+    return expAfter();
+  }
+
+  const publicPort = Number(on);
+  const slot = st.tailscale.slots.find((s) => s.publicPort === publicPort);
+  const cur = slot && slot.shares[0];
+  const mode = how === "tailnet" ? "serve" : "funnel";
+  if (cur && cur.localPort === target.port && cur.isFunnel === (mode === "funnel"))
+    return expFail(`${name} is already shared on port ${publicPort}.`);
+  const lines = [];
+  if (cur && cur.localPort !== target.port) lines.push(`Port ${publicPort} currently points at ${expWhoText(cur.target)} — that stops.`);
+  if (mode === "funnel") lines.push("Anyone with the URL will be able to reach it, with no login.");
+  const verb = mode === "funnel" ? "Open" : "Share";
+  const where = mode === "funnel" ? "the whole internet" : "your tailnet";
+  if ((mode === "funnel" || cur) && !confirm(`${verb} ${name} to ${where} on port ${publicPort}?\n\n${lines.join("\n")}`)) return;
+  $("exp-go").disabled = true;
+  const res = await cfPost("/api/funnel", {
+    publicPort,
+    localPort: target.port,
+    enable: true,
+    mode,
+    // re-pointing a port, or taking one from internet down to tailnet
+    replace: !!cur,
+  });
+  if (res && res.error) expFail(res.error);
+  await expAfter();
+};

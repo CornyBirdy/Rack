@@ -118,7 +118,7 @@ you're filtering, and dragging is off — the order you see isn't the whole list
 ## Controller settings (⚙)
 
 The **⚙** button in the sidebar header (top-left) holds controller-wide settings
-— **Theme**, **Run on boot**, and **What's exposed** — kept separate from the
+— **Theme**, **Run on boot**, and the **Exposure manager** — kept separate from the
 per-app buttons so it's clear what acts on the controller vs. the selected app.
 
 - **Run on boot** installs/removes a Windows Startup entry that launches the
@@ -127,15 +127,37 @@ per-app buttons so it's clear what acts on the controller vs. the selected app.
   to have that app come up on its own — so after a reboot, your usual apps are
   back. Apps show a ⚡ badge in the sidebar when auto-start is on.
 
-## What's exposed (⚙ → 🔒)
+## Exposure manager (⚙ → ◎)
 
-Rack knows the ports of the apps it runs. This view covers **the whole machine**,
-so you can answer "what is on this port?" and "what is that funnel actually
-pointing at?" without guessing.
+Everything on this machine that can be reached from somewhere else, and every
+way to change that, in one place. Open it from **⚙ → ◎ Exposure manager**, or
+from **◎ Exposure manager** on any process's card — that opens it with the
+process already picked and its rows highlighted.
 
-It lists every listening port with the program behind it — the **Rack app and
-process** where Rack runs it, otherwise the program name, PID and path — and how
-far each one reaches:
+**Expose** at the top is the one form for sharing anything: pick *what* (a Rack
+app's process, any other program listening on this PC, or a port you type),
+*to* (tailnet only, the internet through Tailscale Funnel, or the internet
+through a Cloudflare tunnel) and *on* (which Tailscale port, or which tunnel).
+Picking a port that's already in use says what it will replace. Anything headed
+for the internet asks first.
+
+Below it, every exposure method is listed **with what's using it**:
+
+- **Tailscale** — each port (443, 8443 and 10000, plus any other port you've
+  shared) with its URL, whether it reaches the internet or only your tailnet, and
+  the **app and process** behind it (or the program name and PID when Rack
+  doesn't run it). Free ports say so and have **Use…**. A share pointing at a port
+  nothing listens on — or at a stopped app — is flagged. **Tailnet only**,
+  **Open to internet** and **Stop** change a share in place.
+- **Cloudflare tunnels** — every named tunnel in your account: which app it
+  publishes, its hostname, and whether it's up. **auto**, **Connect** /
+  **Disconnect**, **Log** and **Stop** (which frees the tunnel) are here; a free
+  tunnel has **Use…**.
+- **Tunnels Rack didn't start** — a stray `cloudflared`, `ngrok` or `frpc` from
+  someone's `run-tunnel.bat` is listed with the port and app it publishes, so it
+  can't hide. Close its window to stop it.
+- **Listening ports** — every port on the machine with the program behind it and
+  how far it reaches, each with **Expose…**:
 
 | Badge | Means |
 |---|---|
@@ -144,21 +166,9 @@ far each one reaches:
 | **Tailnet** | Tailscale `serve`. Only devices signed in to your tailnet. |
 | **Internet** | Tailscale Funnel or a tunnel, so anyone with the URL. |
 
-At the top, everything published right now: the internet-facing list first, each
-entry naming the local port *and the app* behind it, with **Stop** and (for a
-funnel) **Make tailnet-only**. Tunnels Rack did not start — a stray
-`cloudflared` from someone's `run-tunnel.bat` — are listed too, so they can't
-hide; close their window to stop them.
-
-**Share…** on any port picks a Tailscale port and shares it, **Tailnet** for
-tailnet-only or **Internet** for a public funnel. Ports already in use say which
-app has them. This works on any port on the machine, including things Rack
-doesn't run — unlike the per-process **Public** dropdown, which only covers Rack's
-own apps.
-
 > Run Rack as administrator to see the program behind system ports. Windows
-> hides the name and path of other users' processes from a normal user; the view
-> says so when that's the case.
+> hides the name and path of other users' processes from a normal user; the
+> manager says so when that's the case.
 
 ## Checking for updates (⚙ → ⟲ Check for updates)
 
@@ -222,22 +232,23 @@ or type `off` to skip the rebuild entirely.
 
 ## Public access
 
-Each process that serves a port gets one **Public** dropdown in its details card,
-listing whichever providers exist on this machine. A process has one public
-route or none — picking a new one turns the old one off.
+Each process that serves a port shows how it's exposed in its details card —
+**● Internet · Funnel :8443**, **● Tailnet · :443**, a Cloudflare tunnel and its
+state, or *Not exposed* — with a link to each public URL. Changing any of it is
+done in the **◎ Exposure manager** (the button on the same line), which sees
+every route on the machine at once. A process can be on more than one route.
 
 ### Tailscale Funnel
 
-If Tailscale is installed and logged in on the machine running Rack, pick a public
-port and Rack runs the Tailscale command for you, then shows a **Public URL**
-link and a green **● public** marker.
+If Tailscale is installed and logged in on the machine running Rack, pick a
+Tailscale port in the Exposure manager and Rack runs the Tailscale command for
+you. **Tailnet only** uses `tailscale serve`; **Internet** uses Funnel.
 
 Funnel only allows three public ports — **443, 8443, and 10000** — so you can
 expose **up to three processes at once** (this is a Tailscale limit, not a plan
-limit; Funnel is available on all plans including the free one). A port already
-used by another process shows as *in use* and can't be picked twice. Switching a
-process to a different public port turns the old one off first, so you never
-leave a stray funnel behind.
+limit; Funnel is available on all plans including the free one). Pointing a port
+that's already in use at something else turns the old share off first, so you
+never leave a stray funnel behind.
 
 ### Cloudflare Tunnel
 
@@ -263,12 +274,13 @@ install may raise, and picking your domain in the browser window the login opens
 (it writes credentials to `~/.cloudflared`, then the dialog catches up on its
 own). A login left unfinished is given up on after 10 minutes.
 
-Cloudflare stays out of the per-process Public dropdown until cloudflared is
-installed, so the ⚙ menu is where the feature lives until then. After that, pick **＋ New tunnel…** in the
-Public dropdown, give it a name and a hostname, and Rack runs
-`cloudflared tunnel create` and `cloudflared tunnel route dns` for you, streaming
-the output. The tunnel is then bound to that process for good; it appears by name
-in the dropdown of every other process too, but only one process may use it.
+Once that's done, pick a Rack process in the Exposure manager, **Internet
+(Cloudflare)**, then **＋ New tunnel…**, give it a name and a hostname, and Rack
+runs `cloudflared tunnel create` and `cloudflared tunnel route dns` for you,
+streaming the output. The tunnel is then bound to that process until you
+**Stop** it; one tunnel serves one process. Cloudflare tunnels are for Rack's own
+processes, since Rack runs `cloudflared` alongside them — use Tailscale for
+anything else on the machine.
 
 Unlike Tailscale — whose daemon holds a funnel up on its own — `cloudflared` is a
 process Rack runs and supervises. That means:
@@ -276,10 +288,10 @@ process Rack runs and supervises. That means:
 - A tunnel is **always stopped with the process it publishes**, including when
   that process crashes or when Rack shuts down. A public hostname never outlives
   the thing behind it.
-- Tick **auto** to bring the tunnel up automatically whenever the process runs;
-  leave it off and use **Connect** by hand.
-- If cloudflared fails, the row shows **● failed** — hover it for the reason, or
-  click **log ↗** for the last 200 lines of output.
+- Tick **auto** (in the Exposure manager) to bring the tunnel up automatically
+  whenever the process runs; leave it off and use **Connect** by hand.
+- If cloudflared fails, the tunnel shows **Failed** with the reason — **Log**
+  has the last 200 lines of output.
 
 > Anything you publish is reachable from the **public internet** — only turn it
 > on for services you intend to share. `cloudflared tunnel route dns` writes a
