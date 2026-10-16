@@ -115,6 +115,35 @@ PocketBase console. Press **/** (or Ctrl+K) from anywhere to jump to it,
 **Enter** to open the first match, and **Esc** to clear. Categories expand while
 you're filtering, and dragging is off — the order you see isn't the whole list.
 
+## Usage stats (▦ Overview)
+
+Every running app shows its **CPU and memory** live — beside its name in the
+sidebar, as tiles with a 10-minute sparkline at the top of the app, and per
+process in **Details** (with how many processes it's running). An app counts
+everything it started *and everything those spawned*, so a `start.bat` that
+launches node that forks workers is one number, not a stray `cmd.exe`.
+
+**▦ Overview** (top of the sidebar) is the whole machine at a glance — CPU,
+memory, free disk on Rack's drive and uptime — plus every app ranked by CPU or
+memory. CPU is a share of the whole machine, the way Task Manager shows it.
+Hover a sparkline (or drag a finger along it) to read a past value.
+
+Rack samples every 4 seconds while anything is running. On Windows that's one
+long-lived, low-cost PowerShell loop; it stops a minute after the last app does.
+
+## On your phone
+
+Rack's dashboard works on a phone. Open `http://<server>:7799` from the phone —
+the server's LAN IP, or its Tailscale name/IP from anywhere on your tailnet. The
+app list and an app are two pages there: tap an app to open it, **‹** or the
+phone's back gesture to return. Dialogs open as bottom sheets. In Chrome,
+**⋮ → Add to Home screen** gives it an icon like an app.
+
+> Rack has **no login**: anyone who can reach port 7799 can start, stop and add
+> apps. Reach it over your LAN or tailnet — never put Rack itself on a Funnel or
+> Cloudflare tunnel. If Windows asks whether Node may use the network the first
+> time, allow **Private** networks.
+
 ## Controller settings (⚙)
 
 The **⚙** button in the sidebar header (top-left) holds controller-wide settings

@@ -1,0 +1,10 @@
+{
+  "name": "Rack",
+  "short_name": "Rack",
+  "description": "Run and watch your apps from one place",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#131318",
+  "theme_color": "#17171e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

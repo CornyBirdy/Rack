@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.12.0
+- **Usage stats.** Every running app shows its CPU and memory live: beside its
+  name in the sidebar, as CPU / Memory tiles with a 10-minute sparkline on the
+  app, and per process in Details along with how many processes it runs. An app
+  counts its whole process tree — a `.bat` that starts node that forks workers
+  is one number.
+- **New: ▦ Overview** at the top of the sidebar — machine CPU, memory, free disk
+  and uptime, and every app side by side, sorted by CPU, memory or name. Tap a
+  row to open the app.
+- **Works on a phone.** Under ~760px wide the app list and the app become two
+  pages with a ‹ back button (the phone's back gesture works too), the panels
+  stack, consoles get a sensible height, and dialogs open as bottom sheets.
+  Narrow desktop windows and unfolded phones stack details above the consoles.
+- Add to Home screen gets a proper Rack icon and name.
+
 ## v0.11.0
 - **"What's exposed" is now the ◎ Exposure manager.** It used to be a read-out
   with a Share button bolted on; now it's where exposing things happens. One

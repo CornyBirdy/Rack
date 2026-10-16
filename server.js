@@ -7,9 +7,10 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { spawn, exec, execFile, execSync } = require("child_process");
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -1107,6 +1108,7 @@ const MIME = {
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
 };
 
 function sendJSON(res, code, obj) {
@@ -1264,6 +1266,11 @@ const server = http.createServer(async (req, res) => {
     if (parts[1] === "apps" && parts[3] === "logs" && req.method === "GET") {
       const slots = slotsFor(app);
       return sendJSON(res, 200, slots.map((s) => ({ log: s.log, errCount: s.errCount })));
+    }
+
+    // GET /api/stats  → CPU / memory per app and for the machine, with recent history
+    if (parts[1] === "stats" && req.method === "GET") {
+      return sendJSON(res, 200, statsPayload());
     }
 
     // GET /api/funnel  → live Tailscale funnel state   POST /api/funnel {publicPort, localPort, enable}
@@ -2375,6 +2382,288 @@ async function exposureState(rescan) {
   };
 }
 
+/* ------------------------------------------------------------ usage stats */
+
+// CPU and memory per app. A process Rack starts is often only the head of a
+// tree — a .bat that runs node that forks workers — so each running process is
+// counted together with everything below it. CPU is a share of the whole
+// machine, the way Task Manager shows it. A short history feeds the sparklines.
+
+const STATS_MS = 4000;
+const STATS_HISTORY = 150; // ~10 minutes at STATS_MS
+
+// The process table: pid -> { ppid, cpu (cumulative seconds), mem (bytes) }.
+//
+// Windows: one long-lived PowerShell prints the table every STATS_MS, because
+// starting PowerShell costs more than the sample does. Get-Process is the cheap
+// part; the parent map needs WMI, so it is only re-read when processes it
+// hasn't seen turn up (at most every 10s) and once a minute regardless. The
+// loop exits by itself once Rack is gone, so it can never be orphaned.
+const STATS_PS = `
+$ErrorActionPreference = 'SilentlyContinue'
+$parents = @{}
+$mapAt = [datetime]::MinValue
+while ($true) {
+  if (-not (Get-Process -Id ${process.pid})) { exit }
+  $procs = Get-Process
+  $age = ((Get-Date) - $mapAt).TotalSeconds
+  $stale = $age -gt 60
+  if (-not $stale -and $age -gt 10) { foreach ($p in $procs) { if (-not $parents.ContainsKey($p.Id)) { $stale = $true; break } } }
+  if ($stale) {
+    $parents = @{}
+    foreach ($c in (Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)) { $parents[[int]$c.ProcessId] = [int]$c.ParentProcessId }
+    $mapAt = Get-Date
+  }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.AppendLine('BEGIN')
+  foreach ($p in $procs) {
+    $t = $p.TotalProcessorTime
+    [void]$sb.AppendLine("$($p.Id)\`t$($parents[$p.Id])\`t$(if ($t) { $t.Ticks } else { 0 })\`t$($p.WorkingSet64)")
+  }
+  [void]$sb.AppendLine('END')
+  [Console]::Out.Write($sb.ToString())
+  [Console]::Out.Flush()
+  Start-Sleep -Milliseconds ${STATS_MS}
+}
+
+`;
+
+let winTable = null; // { at, procs } — the newest table the PowerShell loop printed
+let winSampler = null;
+let winSamplerAt = 0;
+
+function startWinSampler() {
+  if (winSampler || Date.now() - winSamplerAt < 30000) return; // don't respawn in a tight loop
+  winSamplerAt = Date.now();
+  let child;
+  try {
+    child = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", "-"], { windowsHide: true });
+  } catch {
+    return;
+  }
+  winSampler = child;
+  let buf = "";
+  let rows = null;
+  child.stdout.on("data", (d) => {
+    buf += d;
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop();
+    for (const line of lines) {
+      if (line === "BEGIN") rows = new Map();
+      else if (line === "END" && rows) {
+        winTable = { at: Date.now(), procs: rows };
+        rows = null;
+      } else if (rows) {
+        const [pid, ppid, ticks, mem] = line.split("\t");
+        if (pid) rows.set(Number(pid), { ppid: Number(ppid) || 0, cpu: Number(ticks) / 1e7, mem: Number(mem) || 0 });
+      }
+    }
+  });
+  child.on("error", () => {});
+  child.on("exit", () => {
+    if (winSampler !== child) return;
+    winSampler = null;
+    winTable = null; // stale numbers would read as live ones
+  });
+  child.stdin.end(STATS_PS);
+}
+
+function stopWinSampler() {
+  if (!winSampler) return;
+  try { winSampler.kill(); } catch {}
+  winSampler = null;
+  winTable = null;
+  winSamplerAt = 0; // a deliberate stop isn't a crash — the next start needn't wait
+}
+
+const CLK_TCK = 100; // USER_HZ — 100 on every mainstream Linux build
+const PAGE_SIZE = 4096;
+
+function readProcLinux() {
+  const procs = new Map();
+  let entries = [];
+  try { entries = fs.readdirSync("/proc"); } catch { return null; }
+  for (const e of entries) {
+    if (!/^\d+$/.test(e)) continue;
+    try {
+      const stat = fs.readFileSync(`/proc/${e}/stat`, "utf8");
+      // the name in (parens) can hold spaces, so split after its closing paren
+      const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      procs.set(Number(e), {
+        ppid: Number(f[1]),
+        cpu: (Number(f[11]) + Number(f[12])) / CLK_TCK,
+        mem: Number(f[21]) * PAGE_SIZE,
+      });
+    } catch {} // the process exited mid-read
+  }
+  return procs;
+}
+
+// Anything else (macOS): ps. TIME is [[dd-]hh:]mm:ss[.cc].
+async function readProcPs() {
+  const procs = new Map();
+  for (const line of await shellLines("ps -A -o pid=,ppid=,time=,rss=")) {
+    const [pid, ppid, time, rss] = line.trim().split(/\s+/);
+    if (!pid || !time) continue;
+    const [days, clock] = time.includes("-") ? time.split("-") : [0, time];
+    const secs = clock.split(":").reduce((s, part) => s * 60 + Number(part), 0) + Number(days) * 86400;
+    procs.set(Number(pid), { ppid: Number(ppid), cpu: secs, mem: Number(rss) * 1024 });
+  }
+  return procs;
+}
+
+// Returns { at, procs } or null when there's no table (yet).
+async function processTable() {
+  if (process.platform === "win32") {
+    startWinSampler();
+    return winTable;
+  }
+  const procs = process.platform === "linux" ? readProcLinux() : await readProcPs();
+  return procs ? { at: Date.now(), procs } : null;
+}
+
+// Machine-wide CPU from the kernel's per-core counters.
+let prevCpuTimes = null;
+function systemCpu() {
+  let idle = 0;
+  let total = 0;
+  for (const c of os.cpus()) {
+    for (const v of Object.values(c.times)) total += v;
+    idle += c.times.idle;
+  }
+  const prev = prevCpuTimes;
+  prevCpuTimes = { idle, total };
+  if (!prev || total <= prev.total) return null;
+  return Math.max(0, Math.min(100, 100 * (1 - (idle - prev.idle) / (total - prev.total))));
+}
+
+// The drive Rack lives on — on a home server that's usually the one that fills up.
+function systemDisk() {
+  try {
+    const s = fs.statfsSync(ROOT);
+    return { path: path.parse(ROOT).root, total: s.blocks * s.bsize, free: s.bavail * s.bsize };
+  } catch {
+    return null;
+  }
+}
+
+const statsHistory = new Map(); // appId -> [{ t, cpu, mem }]   (cpu/mem null = a gap: the app was stopped)
+const systemHistory = [];
+let statsNow = null; // the latest broadcast payload
+let prevTable = null;
+let idleSince = 0;
+
+function pushPoint(list, point) {
+  list.push(point);
+  if (list.length > STATS_HISTORY) list.splice(0, list.length - STATS_HISTORY);
+}
+
+// Sum one running process and every descendant. `seen` stops a pid being
+// counted twice when two of an app's processes share a tree.
+function treeUsage(rootPid, table, prev, dt, children, seen) {
+  const ncpu = os.cpus().length || 1;
+  let cpuSecs = 0;
+  let mem = 0;
+  let count = 0;
+  const queue = [rootPid];
+  while (queue.length) {
+    const pid = queue.shift();
+    if (seen.has(pid)) continue;
+    seen.add(pid);
+    const p = table.procs.get(pid);
+    if (!p) continue;
+    count++;
+    mem += p.mem;
+    if (prev) {
+      const before = prev.procs.get(pid);
+      cpuSecs += Math.max(0, p.cpu - (before ? before.cpu : 0));
+    }
+    for (const kid of children.get(pid) || []) queue.push(kid);
+  }
+  if (!count) return null;
+  const cpu = prev && dt > 0 ? Math.min(100, (100 * cpuSecs) / dt / ncpu) : null;
+  return { cpu, mem, procs: count };
+}
+
+async function sampleStats() {
+  const running = apps.filter((a) => slotsFor(a).some((s) => s.proc));
+  if (!running.length && !idleSince) idleSince = Date.now();
+  if (running.length) idleSince = 0;
+  // Nothing to measure for a minute — let the Windows sampler go.
+  if (!running.length && idleSince && Date.now() - idleSince > 60000) stopWinSampler();
+
+  const table = running.length ? await processTable() : null;
+  const fresh = table && (!prevTable || table.at !== prevTable.at);
+  const appsOut = {};
+
+  if (table) {
+    const prev = prevTable && fresh ? prevTable : null;
+    const dt = prev ? (table.at - prev.at) / 1000 : 0;
+    const children = new Map();
+    for (const [pid, p] of table.procs) {
+      if (p.ppid === pid) continue;
+      if (!children.has(p.ppid)) children.set(p.ppid, []);
+      children.get(p.ppid).push(pid);
+    }
+    for (const app of running) {
+      const seen = new Set();
+      const cmds = slotsFor(app).map((s) =>
+        s.proc && s.pid ? treeUsage(s.pid, table, prev, dt, children, seen) : null
+      );
+      const live = cmds.filter(Boolean);
+      if (!live.length) continue; // started after this table was taken
+      const anyCpu = live.some((c) => c.cpu != null);
+      appsOut[app.id] = {
+        cpu: anyCpu ? live.reduce((n, c) => n + (c.cpu || 0), 0) : null,
+        mem: live.reduce((n, c) => n + c.mem, 0),
+        procs: live.reduce((n, c) => n + c.procs, 0),
+        cmds,
+      };
+    }
+    if (fresh) prevTable = table;
+  }
+  // On Windows the table arrives on PowerShell's clock, so between two tables
+  // the last numbers stand instead of reading as zero.
+  if (table && !fresh && statsNow) {
+    for (const id of Object.keys(appsOut)) if (statsNow.apps[id]) appsOut[id] = statsNow.apps[id];
+  }
+  if (!running.length) prevTable = null;
+
+  const t = Date.now();
+  for (const app of apps) {
+    const s = appsOut[app.id];
+    let hist = statsHistory.get(app.id);
+    if (s) {
+      if (!hist) statsHistory.set(app.id, (hist = []));
+      pushPoint(hist, { t, cpu: s.cpu, mem: s.mem });
+    } else if (hist && hist.length && hist[hist.length - 1].mem != null) {
+      pushPoint(hist, { t, cpu: null, mem: null }); // stopped: break the line here
+    }
+  }
+  for (const id of statsHistory.keys()) if (!apps.some((a) => a.id === id)) statsHistory.delete(id);
+
+  const memTotal = os.totalmem();
+  const system = {
+    cpu: systemCpu(),
+    memUsed: memTotal - os.freemem(),
+    memTotal,
+    disk: systemDisk(),
+    cores: os.cpus().length,
+    uptime: os.uptime(),
+    hostname: os.hostname(),
+  };
+  pushPoint(systemHistory, { t, cpu: system.cpu, mem: system.memUsed });
+
+  statsNow = { at: t, interval: STATS_MS, window: STATS_MS * STATS_HISTORY, system, apps: appsOut };
+  broadcast({ type: "stats", ...statsNow });
+}
+
+function statsPayload() {
+  const history = {};
+  for (const [id, list] of statsHistory) history[id] = list;
+  return { ...(statsNow || { interval: STATS_MS, window: STATS_MS * STATS_HISTORY, system: null, apps: {} }), history, systemHistory };
+}
+
 /* --------------------------------------------------------- run on boot (win) */
 
 function startupShortcutPath() {
@@ -2440,6 +2729,8 @@ server.listen(CONTROL_PORT, () => {
   // Look for updates once the dashboard has settled, then a few times a day.
   checkUpdatesSoon(20000);
   setInterval(() => checkUpdates().catch(() => {}), AUTO_CHECK_MS).unref();
+  sampleStats().catch(() => {});
+  setInterval(() => sampleStats().catch(() => {}), STATS_MS).unref();
 });
 
 /* ------------------------------------------------- clean shutdown of children */
@@ -2454,6 +2745,7 @@ function shutdown() {
   for (const t of tunnels.values()) if (t.pid) killPid(t.pid);
   if (cfSetupProc) killPid(cfSetupProc.pid);
   if (installProc) killPid(installProc.pid);
+  stopWinSampler();
   setTimeout(() => process.exit(0), 800);
 }
 process.on("SIGINT", shutdown);

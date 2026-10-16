@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#17171e" />
   <title>Rack</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -33,6 +36,11 @@
                title="Filter apps by name, category or process — press / to jump here" />
         <button id="filter-clear" class="filter-clear" title="Clear filter (Esc)" hidden>✕</button>
       </div>
+      <button id="overview-btn" class="app-item overview-item" title="CPU and memory for the machine and every app">
+        <span class="ov-icon" aria-hidden="true">▦</span>
+        <span class="name">Overview</span>
+        <span id="ov-usage" class="usage"></span>
+      </button>
       <nav id="app-list" class="app-list"></nav>
       <button id="add-app-btn" class="add-app-btn">+ Add app</button>
     </aside>
@@ -41,6 +49,7 @@
     <main class="main">
       <header class="topbar">
         <div class="topbar-left">
+          <button id="btn-back" class="icon-btn back-btn" title="Back to the app list" aria-label="Back">‹</button>
           <h2 id="sel-name">No app selected</h2>
           <span id="sel-status" class="status-pill stopped">stopped</span>
         </div>
@@ -59,6 +68,45 @@
         <strong>rack.json</strong>, all its processes import in one click.</p>
         <p>Already on GitHub? Paste the repo link into <strong>+ Add app → Install from GitHub</strong>
         and Rack clones it into your apps folder and adds it for you.</p>
+      </div>
+
+      <!-- machine + every app's CPU and memory -->
+      <div id="overview" class="panel overview" hidden>
+        <section class="status-row">
+          <div class="stat stat-chart" id="sys-cpu">
+            <span class="stat-label">CPU <span class="stat-note"></span></span>
+            <span class="stat-value">—</span>
+            <svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
+          <div class="stat stat-chart" id="sys-mem">
+            <span class="stat-label">Memory <span class="stat-note"></span></span>
+            <span class="stat-value">—</span>
+            <svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
+          <div class="stat" id="sys-disk">
+            <span class="stat-label">Disk <span class="stat-note"></span></span>
+            <span class="stat-value">—</span>
+            <span class="meter"><span class="meter-fill"></span></span>
+          </div>
+          <div class="stat" id="sys-up">
+            <span class="stat-label">Machine up <span class="stat-note"></span></span>
+            <span class="stat-value">—</span>
+          </div>
+        </section>
+        <section class="card ov-apps">
+          <div class="ov-head">
+            <h3>Apps</h3>
+            <span class="ov-sort">
+              Sort
+              <button data-sort="cpu">CPU</button>
+              <button data-sort="mem">Memory</button>
+              <button data-sort="name">Name</button>
+            </span>
+          </div>
+          <div id="ov-rows" class="ov-rows"></div>
+          <p class="exp-dim ov-foot">CPU is a share of the whole machine, like Task Manager. Each app counts every
+            process it started and everything those spawned.</p>
+        </section>
       </div>
 
       <div id="panel" class="panel" hidden>
@@ -82,6 +130,16 @@
           <div class="stat">
             <span class="stat-label">Ports</span>
             <span id="stat-ports" class="stat-value">—</span>
+          </div>
+          <div class="stat stat-chart" id="tile-cpu">
+            <span class="stat-label">CPU <span class="stat-note"></span></span>
+            <span class="stat-value">—</span>
+            <svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
+          <div class="stat stat-chart" id="tile-mem">
+            <span class="stat-label">Memory <span class="stat-note"></span></span>
+            <span class="stat-value">—</span>
+            <svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg>
           </div>
         </section>
 

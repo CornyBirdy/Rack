@@ -15,6 +15,9 @@
   --red: #d1373f;
   --red-soft: #fbe3e4;
   --yellow: #b98a00;
+  --yellow-soft: #f7edcc;
+  --chart: #3b6fd4;
+  --chart-soft: #dce6f8;
   --shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
@@ -34,6 +37,9 @@
   --red: #f2555e;
   --red-soft: #331b1d;
   --yellow: #d9a514;
+  --yellow-soft: #2f2712;
+  --chart: #6f9cf0;
+  --chart-soft: #1f2a40;
   --shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
@@ -859,6 +865,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .proc-extra { display: flex; flex-direction: column; gap: 8px; }
 .proc-extra[hidden] { display: none; }
 .proc-more, .proc-remove { padding: 6px 10px; flex: none; }
+.proc-line .proc-remove { margin-top: 0; }
 .modal-wide input { font-weight: normal; }
 .modal-wide .proc-extra input { width: 100%; }
 
@@ -1084,4 +1091,200 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   .exp-modal .exp-table { table-layout: auto; }
   .exp-modal .exp-table td { width: auto !important; padding: 6px; }
   .exp-act { white-space: normal; }
+}
+
+/* ============================= usage stats ============================= */
+
+/* sidebar: live CPU · memory beside a running app */
+.app-item .usage {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.app-item .usage:empty { display: none; }
+.overview-item { font-weight: 600; }
+.overview-item .ov-icon { color: var(--accent); width: 9px; text-align: center; flex-shrink: 0; }
+
+.stat-note { text-transform: none; letter-spacing: 0; font-size: 0.95em; }
+.stat-chart .stat-label,
+#sys-disk .stat-label,
+#sys-up .stat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-chart { gap: 2px; }
+.spark {
+  width: 100%;
+  height: 32px;
+  margin-top: 4px;
+  overflow: visible;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.spark-line { fill: none; stroke: var(--chart); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.spark-area { fill: var(--chart-soft); opacity: 0.7; }
+.spark-x { stroke: var(--fg-muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.stat[data-level="warn"] .spark-line { stroke: var(--yellow); }
+.stat[data-level="crit"] .spark-line { stroke: var(--red); }
+.stat[data-level="warn"] .spark-area { fill: var(--yellow-soft); }
+.stat[data-level="crit"] .spark-area { fill: var(--red-soft); }
+
+.meter {
+  display: block;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--chart-soft);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  min-width: 0;
+  border-radius: 99px;
+  background: var(--chart);
+  transition: width 0.4s ease;
+}
+.meter-fill[data-level="warn"] { background: var(--yellow); }
+.meter-fill[data-level="crit"] { background: var(--red); }
+#sys-disk .meter { margin-top: 8px; }
+
+/* overview page */
+.overview { overflow-y: auto; }
+.ov-apps { display: flex; flex-direction: column; gap: 8px; }
+.ov-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ov-head h3 { margin: 0; }
+.ov-sort { display: flex; align-items: center; gap: 4px; font-size: 0.78rem; color: var(--fg-muted); }
+.ov-sort button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  border-radius: 99px;
+  padding: 3px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.ov-sort button.on { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+.ov-rows { display: flex; flex-direction: column; }
+.ov-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) 1fr 1fr minmax(120px, 0.9fr);
+  gap: 16px;
+  align-items: center;
+  padding: 10px 8px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ov-row:last-child { border-bottom: none; }
+.ov-row:hover { background: var(--bg); }
+.ov-row.stopped .ov-cell { opacity: 0.45; }
+.ov-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; font-size: 0.92rem; }
+.ov-name .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-cat { font-size: 0.75rem; white-space: nowrap; }
+.ov-cell { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: baseline; }
+.ov-cell .meter { grid-column: 1 / -1; }
+.ov-k { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); }
+.ov-v { font-size: 0.88rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.ov-meta { font-size: 0.78rem; text-align: right; }
+.ov-foot { margin: 4px 0 0; }
+
+/* ============================= smaller screens ============================= */
+
+.back-btn { display: none; font-size: 1.6rem; padding: 0 8px 2px; }
+
+/* A narrow window (or an unfolded phone): stack details above the consoles. */
+@media (max-width: 1100px) {
+  .panel { overflow-y: auto; }
+  .panel-body { flex-direction: column; flex: none; }
+  .details { flex: none; min-width: 0; overflow: visible; }
+  .terminals { max-width: none; flex: none; height: 70vh; min-height: 360px; }
+}
+
+/* Phones: the app list and the app are two pages (see showMain in app.js), and
+   the page scrolls as a whole instead of each pane on its own. */
+@media (max-width: 760px) {
+  body { height: auto; min-height: 100dvh; overflow: auto; }
+  .layout { display: block; height: auto; }
+
+  .sidebar {
+    width: 100%;
+    min-height: 100dvh;
+    border-right: none;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  body.m-main .sidebar { display: none; }
+  body:not(.m-main) .main { display: none; }
+  .app-list { overflow: visible; flex: none; }
+  .app-item { padding: 12px; font-size: 1rem; }
+  .app-item .usage { font-size: 0.8rem; }
+  .cat-header { padding: 10px 6px 6px; }
+  .app-filter input { padding: 10px 0; font-size: 1rem; }
+  .add-app-btn { padding: 12px; }
+  .settings-menu { min-width: 240px; }
+  .menu-item { padding: 11px 10px; font-size: 0.95rem; }
+
+  .main { min-height: 100dvh; }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .back-btn { display: block; }
+  .topbar-left { flex: 1 1 100%; gap: 8px; }
+  .topbar-right { flex: 1 1 100%; flex-wrap: wrap; }
+  .topbar-right .btn { flex: 1 1 0; padding: 9px 8px; white-space: nowrap; }
+
+  .panel { overflow: visible; padding: 12px; gap: 12px; }
+  .empty-hint { padding: 24px 16px; }
+  .status-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { min-width: 0; padding: 10px 12px; }
+  .stat-chart { order: -1; } /* what you check from a phone comes first */
+  .stat-value { font-size: 1rem; }
+  .card { padding: 12px; }
+  .det-cmd { padding: 10px; }
+  .det-cmd dl { column-gap: 10px; }
+  .funnel-row .exp-open { margin-left: 0; }
+
+  .terminals { height: auto; min-height: 0; }
+  .term-show { display: none; }
+  .term-container { overflow: visible; }
+  .terminal { flex: none !important; height: 60vh; min-height: 260px; }
+
+  .ov-head { flex-wrap: wrap; }
+  .ov-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 14px;
+    padding: 12px 4px;
+  }
+  .ov-name { grid-column: 1 / -1; font-size: 1rem; }
+  .ov-meta { grid-column: 1 / -1; text-align: left; }
+
+  /* dialogs become bottom sheets */
+  .modal-backdrop { align-items: flex-end; }
+  .modal,
+  .modal-wide,
+  .exp-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92dvh;
+    overflow-y: auto;
+    border-radius: 14px 14px 0 0;
+    padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  }
+  .modal-row2 { grid-template-columns: 1fr; }
+  .modal input, .modal select, .modal textarea { font-size: 16px; }
+  .proc-line { flex-wrap: wrap; }
+  .proc-line .proc-path { flex: 1 1 100%; }
+  .proc-line .proc-port { flex: 1 1 0; width: auto; min-width: 0; }
+  .install-line { flex-wrap: wrap; }
+  .install-line .btn { flex: 1 1 100%; }
+  .modal-actions { flex-wrap: wrap; }
+  #update-log { height: 50dvh; }
 }

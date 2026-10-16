@@ -4,7 +4,10 @@ const $ = (id) => document.getElementById(id);
 
 let appsList = [];
 let conflictsList = [];
-let selectedId = null;
+// null = the Overview page. Remembered per browser, so a phone reopens where it was.
+let selectedId = (() => {
+  try { return localStorage.getItem("selected") || null; } catch { return null; }
+})();
 let uptimeTimer = null;
 let visibleCount = 2;
 let consolesKey = ""; // identity of the currently-built console DOM
@@ -393,10 +396,10 @@ async function refreshApps() {
   appsList = data.apps || [];
   conflictsList = data.conflicts || [];
   if (selectedId && !appsList.find((a) => a.id === selectedId)) selectedId = null;
-  if (!selectedId && appsList.length) selectedId = appsList[0].id;
   renderSidebar();
   renderPanel();
   renderConsoles();
+  renderStats();
 }
 
 function selected() {
@@ -442,6 +445,7 @@ function appItem(app) {
   btn.innerHTML =
     `<span class="dot ${app.running ? "running" : ""}"></span>` +
     `<span class="name"></span>` +
+    `<span class="usage">${usageText(app)}</span>` +
     (app.autostart ? `<span class="auto-badge" title="Auto-starts on launch">⚡</span>` : "") +
     (hasUpdate(upd) ? `<span class="upd-badge">⟳</span>` : "");
   btn.querySelector(".name").textContent = app.name;
@@ -459,6 +463,7 @@ function renderSidebar() {
   const list = $("app-list");
   list.innerHTML = "";
   list.classList.remove("dragging");
+  $("overview-btn").classList.toggle("selected", !selectedId);
 
   const groups = appGroups()
     .map((g) => ({ cat: g.cat, apps: g.apps.filter(matchesFilter) }))
@@ -700,12 +705,38 @@ $("filter-clear").onclick = () => {
 };
 
 function selectApp(id) {
-  selectedId = id;
+  selectedId = id || null;
+  try {
+    if (selectedId) localStorage.setItem("selected", selectedId);
+    else localStorage.removeItem("selected");
+  } catch {}
   renderSidebar();
   renderPanel();
   renderConsoles();
+  renderStats();
   loadLogs();
+  showMain(true);
 }
+$("overview-btn").onclick = () => selectApp(null);
+
+/* ------------------------------------------------------------- phone layout */
+
+// On a narrow screen the sidebar and the app are two pages: pick an app, see
+// it; ‹ (or the phone's own back gesture) goes back to the list.
+const narrow = matchMedia("(max-width: 760px)");
+const onMainPage = () => !!(history.state && history.state.rackMain);
+
+function showMain(on) {
+  document.body.classList.toggle("m-main", on);
+  if (!narrow.matches) return;
+  if (on && !onMainPage()) history.pushState({ rackMain: true }, "");
+  window.scrollTo(0, 0);
+}
+window.addEventListener("popstate", () => {
+  document.body.classList.toggle("m-main", onMainPage());
+  window.scrollTo(0, 0);
+});
+$("btn-back").onclick = () => (onMainPage() ? history.back() : showMain(false));
 
 /* ------------------------------------------------------------- panel */
 
@@ -724,8 +755,10 @@ function renderPanel() {
   const app = selected();
   clearInterval(uptimeTimer);
 
-  $("empty-hint").hidden = !!app;
+  $("empty-hint").hidden = appsList.length > 0;
   $("panel").hidden = !app;
+  $("overview").hidden = !!app || !appsList.length;
+  document.querySelector(".topbar-right").hidden = !app;
   $("btn-run").disabled = !app || app.running;
   $("btn-kill").disabled = !app || !app.running;
   $("btn-edit").disabled = !app;
@@ -740,11 +773,14 @@ function renderPanel() {
     : "Fetch a new version of this app";
 
   if (!app) {
-    $("sel-name").textContent = "No app selected";
-    $("sel-status").className = "status-pill stopped";
-    $("sel-status").textContent = "—";
+    const live = appsList.filter((a) => a.running).length;
+    $("sel-name").textContent = appsList.length ? "Overview" : "No apps yet";
+    $("sel-status").className = "status-pill " + (live ? "running" : "stopped");
+    $("sel-status").textContent = `${live} / ${appsList.length} running`;
+    $("sel-status").hidden = !appsList.length;
     return;
   }
+  $("sel-status").hidden = false;
 
   $("sel-name").textContent = app.name;
   $("sel-status").className = "status-pill " + (app.running ? "running" : "stopped");
@@ -997,6 +1033,7 @@ function renderDetails(app) {
         <dt>Arguments</dt><dd class="c-args"></dd>
         <dt>Folder</dt><dd class="c-dir"></dd>
         <dt>Port</dt><dd class="c-port"></dd>
+        <dt>Usage</dt><dd class="c-usage" data-cmd="${idx}">—</dd>
       </dl>
       <div class="det-links"></div>
       <div class="funnel-row" hidden></div>`;
@@ -1522,22 +1559,269 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* ------------------------------------------------------------- usage stats */
+
+// CPU and memory per app (its whole process tree) and for the machine. The
+// server samples every few seconds and pushes each sample; the history it
+// keeps is fetched once and then extended here the same way it extends it.
+
+let stats = { interval: 4000, window: 600000, system: null, apps: {}, history: {}, systemHistory: [] };
+
+async function loadStats() {
+  try {
+    stats = await api("/api/stats");
+  } catch {}
+  renderStats();
+}
+
+function applyStats(ev) {
+  const cap = Math.round(ev.window / ev.interval);
+  const push = (list, point) => {
+    list.push(point);
+    if (list.length > cap) list.splice(0, list.length - cap);
+  };
+  for (const app of appsList) {
+    const s = ev.apps[app.id];
+    let hist = stats.history[app.id];
+    if (s) push(hist || (stats.history[app.id] = hist = []), { t: ev.at, cpu: s.cpu, mem: s.mem });
+    else if (hist && hist.length && hist[hist.length - 1].mem != null) push(hist, { t: ev.at, cpu: null, mem: null });
+  }
+  push(stats.systemHistory, { t: ev.at, cpu: ev.system.cpu, mem: ev.system.memUsed });
+  Object.assign(stats, { at: ev.at, interval: ev.interval, window: ev.window, system: ev.system, apps: ev.apps });
+  renderStats();
+}
+
+const fmtCpu = (p) => (p == null ? "—" : p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`);
+function fmtMem(b) {
+  if (b == null) return "—";
+  if (b < 1024 ** 3) return `${Math.round(b / 1024 ** 2)} MB`;
+  return `${(b / 1024 ** 3).toFixed(b < 10 * 1024 ** 3 ? 1 : 0)} GB`;
+}
+// 75% and up is worth a look, 90% and up is trouble.
+const level = (pct) => (pct >= 90 ? "crit" : pct >= 75 ? "warn" : "");
+
+function usageText(app) {
+  const s = app.running && stats.apps[app.id];
+  return s ? `${fmtCpu(s.cpu)} · ${fmtMem(s.mem)}` : "";
+}
+
+// A sparkline over the stats window: x is time (so it scrolls), y starts at
+// zero. Gaps (null) are where the app was stopped. `fmt` labels the hover.
+function drawSpark(svg, points, key, { floor, ceil, fmt }) {
+  const now = stats.at || Date.now();
+  const pts = points.filter((p) => now - p.t <= stats.window);
+  const vals = pts.map((p) => p[key]).filter((v) => v != null);
+  const max = Math.min(ceil || Infinity, Math.max(floor, ...vals) * 1.15);
+  const x = (t) => 100 - ((now - t) / stats.window) * 100;
+  const y = (v) => 31 - (v / max) * 29;
+
+  let line = "";
+  let area = "";
+  let run = [];
+  const flush = () => {
+    if (run.length > 1) {
+      const d = run.map(([px, py], i) => `${i ? "L" : "M"}${px.toFixed(2)},${py.toFixed(2)}`).join("");
+      line += d;
+      area += `${d}L${run[run.length - 1][0].toFixed(2)},32L${run[0][0].toFixed(2)},32Z`;
+    }
+    run = [];
+  };
+  for (const p of pts) {
+    if (p[key] == null) flush();
+    else run.push([x(p.t), y(p[key])]);
+  }
+  flush();
+  svg.innerHTML =
+    `<path class="spark-area" d="${area}"/><path class="spark-line" d="${line}"/>` +
+    `<line class="spark-x" x1="0" x2="0" y1="0" y2="32" visibility="hidden"/>`;
+
+  // Hover (or drag a finger) to read a past value into the tile's note.
+  const tile = svg.closest(".stat");
+  const note = tile.querySelector(".stat-note");
+  const rest = note.textContent;
+  const cross = svg.querySelector(".spark-x");
+  const read = (e) => {
+    const box = svg.getBoundingClientRect();
+    const t = now - (1 - (e.clientX - box.left) / box.width) * stats.window;
+    let best = null;
+    for (const p of pts) if (p[key] != null && (!best || Math.abs(p.t - t) < Math.abs(best.t - t))) best = p;
+    if (!best) return;
+    cross.setAttribute("x1", x(best.t));
+    cross.setAttribute("x2", x(best.t));
+    cross.setAttribute("visibility", "visible");
+    const ago = Math.round((Date.now() - best.t) / 1000);
+    note.textContent = `· ${ago < 60 ? `${ago}s` : `${Math.round(ago / 60)}m`} ago: ${fmt(best[key])}`;
+    tile.classList.add("reading");
+  };
+  svg.onpointermove = svg.onpointerdown = read;
+  svg.onpointerleave = svg.onpointerup = svg.onpointercancel = () => {
+    cross.setAttribute("visibility", "hidden");
+    note.textContent = rest;
+    tile.classList.remove("reading");
+  };
+}
+
+function setTile(id, value, note) {
+  const tile = $(id);
+  if (tile.classList.contains("reading")) return; // don't yank a value someone is reading
+  tile.querySelector(".stat-value").textContent = value;
+  tile.querySelector(".stat-note").textContent = note ? `· ${note}` : "";
+}
+
+function peak(points, key) {
+  const now = stats.at || Date.now();
+  const vals = points.filter((p) => now - p.t <= stats.window && p[key] != null).map((p) => p[key]);
+  return vals.length ? Math.max(...vals) : null;
+}
+
+function renderStats() {
+  // sidebar: a running app's live usage beside its name
+  for (const el of document.querySelectorAll("#app-list .app-item")) {
+    const app = appsList.find((a) => a.id === el.dataset.id);
+    const u = el.querySelector(".usage");
+    if (app && u) u.textContent = usageText(app);
+  }
+  const sys = stats.system;
+  $("ov-usage").textContent = sys
+    ? `CPU ${fmtCpu(sys.cpu)} · RAM ${Math.round((100 * sys.memUsed) / sys.memTotal)}%`
+    : "";
+  $("ov-usage").title = sys ? "Machine CPU · memory in use" : "";
+
+  const app = selected();
+  if (app) renderAppStats(app);
+  else if (appsList.length) renderOverview();
+}
+
+function renderAppStats(app) {
+  const s = app.running ? stats.apps[app.id] : null;
+  const hist = stats.history[app.id] || [];
+  const cpuPeak = peak(hist, "cpu");
+  const memPeak = peak(hist, "mem");
+  setTile("tile-cpu", s ? fmtCpu(s.cpu) : "—", cpuPeak != null ? `peak ${fmtCpu(cpuPeak)}` : "");
+  setTile("tile-mem", s ? fmtMem(s.mem) : "—", memPeak != null ? `peak ${fmtMem(memPeak)}` : "");
+  if (!$("tile-cpu").classList.contains("reading"))
+    drawSpark($("tile-cpu").querySelector("svg"), hist, "cpu", { floor: 5, ceil: 100, fmt: fmtCpu });
+  if (!$("tile-mem").classList.contains("reading"))
+    drawSpark($("tile-mem").querySelector("svg"), hist, "mem", { floor: 64 * 1024 ** 2, fmt: fmtMem });
+
+  for (const dd of document.querySelectorAll("#det-commands .c-usage")) {
+    const c = s && s.cmds[Number(dd.dataset.cmd)];
+    dd.textContent = !c
+      ? "—"
+      : `${fmtCpu(c.cpu)} CPU · ${fmtMem(c.mem)}` +
+        (c.procs > 1 ? ` · ${c.procs} processes` : "");
+  }
+}
+
+let ovSort = (() => {
+  try { return localStorage.getItem("ovSort") || "mem"; } catch { return "mem"; }
+})();
+document.querySelectorAll(".ov-sort button").forEach((b) => {
+  b.onclick = () => {
+    ovSort = b.dataset.sort;
+    try { localStorage.setItem("ovSort", ovSort); } catch {}
+    renderOverview();
+  };
+});
+
+function renderOverview() {
+  const sys = stats.system;
+  if (sys) {
+    const memPct = (100 * sys.memUsed) / sys.memTotal;
+    setTile("sys-cpu", fmtCpu(sys.cpu), `${sys.cores} threads`);
+    setTile("sys-mem", fmtMem(sys.memUsed), `of ${fmtMem(sys.memTotal)} · ${Math.round(memPct)}%`);
+    if (!$("sys-cpu").classList.contains("reading"))
+      drawSpark($("sys-cpu").querySelector("svg"), stats.systemHistory, "cpu", { floor: 10, ceil: 100, fmt: fmtCpu });
+    if (!$("sys-mem").classList.contains("reading"))
+      drawSpark($("sys-mem").querySelector("svg"), stats.systemHistory, "mem", { floor: 1, ceil: sys.memTotal, fmt: fmtMem });
+    $("sys-cpu").dataset.level = level(sys.cpu || 0);
+    $("sys-mem").dataset.level = level(memPct);
+    const d = sys.disk;
+    $("sys-disk").hidden = !d;
+    if (d) {
+      const used = (100 * (d.total - d.free)) / d.total;
+      setTile("sys-disk", `${fmtMem(d.free)} free`, `${d.path} · ${Math.round(used)}% used`);
+      const fill = $("sys-disk").querySelector(".meter-fill");
+      fill.style.width = `${used}%`;
+      fill.dataset.level = level(used);
+    }
+    setTile("sys-up", fmtUptime(Date.now() - sys.uptime * 1000), sys.hostname);
+  }
+  document.querySelectorAll(".ov-sort button").forEach((b) => b.classList.toggle("on", b.dataset.sort === ovSort));
+
+  // Running apps first, then the chosen order; stopped ones keep sidebar order.
+  const usage = (a) => (a.running && stats.apps[a.id]) || null;
+  const key = (a) => {
+    const u = usage(a);
+    return ovSort === "cpu" ? (u && u.cpu) || 0 : ovSort === "mem" ? (u && u.mem) || 0 : 0;
+  };
+  const rows = [...appsList].sort((a, b) => {
+    if (a.running !== b.running) return a.running ? -1 : 1;
+    if (ovSort === "name") return a.name.localeCompare(b.name);
+    return key(b) - key(a);
+  });
+
+  // Rows are kept and updated in place, so a tap mid-refresh still lands.
+  const wrap = $("ov-rows");
+  const existing = new Map([...wrap.children].map((el) => [el.dataset.id, el]));
+  for (const app of rows) {
+    let el = existing.get(app.id);
+    existing.delete(app.id);
+    if (!el) {
+      el = document.createElement("button");
+      el.className = "ov-row";
+      el.dataset.id = app.id;
+      el.innerHTML = `
+        <span class="ov-name"><span class="dot"></span><span class="n"></span><span class="ov-cat muted"></span></span>
+        <span class="ov-cell ov-cpu"><span class="ov-k">CPU</span><span class="ov-v"></span><span class="meter"><span class="meter-fill"></span></span></span>
+        <span class="ov-cell ov-mem"><span class="ov-k">Memory</span><span class="ov-v"></span><span class="meter"><span class="meter-fill"></span></span></span>
+        <span class="ov-meta muted"></span>`;
+      el.onclick = () => selectApp(app.id);
+    }
+    wrap.appendChild(el); // moves it into sorted place
+    const u = usage(app);
+    el.classList.toggle("stopped", !app.running);
+    el.querySelector(".dot").className = "dot" + (app.running ? " running" : "");
+    el.querySelector(".n").textContent = app.name;
+    el.querySelector(".ov-cat").textContent = app.category || "";
+    el.querySelector(".ov-cpu .ov-v").textContent = u ? fmtCpu(u.cpu) : "—";
+    el.querySelector(".ov-mem .ov-v").textContent = u ? fmtMem(u.mem) : "—";
+    el.querySelector(".ov-cpu .meter-fill").style.width = `${u ? Math.min(100, u.cpu || 0) : 0}%`;
+    el.querySelector(".ov-mem .meter-fill").style.width =
+      `${u && sys ? Math.min(100, (100 * u.mem) / sys.memTotal) : 0}%`;
+    el.querySelector(".ov-meta").textContent = !app.running
+      ? "stopped"
+      : [
+          app.startedAt ? `up ${fmtUptime(app.startedAt)}` : "",
+          u ? `${u.procs} process${u.procs === 1 ? "" : "es"}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+  }
+  for (const el of existing.values()) el.remove();
+}
+
 /* ------------------------------------------------------------- SSE */
 
 function connectEvents() {
   const es = new EventSource("/api/events");
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
-    if (ev.type === "apps") {
+    if (ev.type === "hello") {
+      loadStats(); // a reconnect may have missed samples — take the server's history
+    } else if (ev.type === "stats") {
+      applyStats(ev);
+    } else if (ev.type === "apps") {
       refreshApps().then(loadLogs);
     } else if (ev.type === "status") {
       const i = appsList.findIndex((a) => a.id === ev.app.id);
       if (i >= 0) appsList[i] = ev.app;
       expSoon(true); // a process started or stopped — its port came or went
       renderSidebar();
-      if (ev.app.id === selectedId) {
+      if (ev.app.id === selectedId || !selectedId) {
         renderPanel();
         renderConsoles();
+        renderStats();
       }
     } else if (ev.type === "log" && ev.id === selectedId) {
       appendLine(preFor(ev.cmd), ev.stream, ev.line);
