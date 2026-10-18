@@ -201,9 +201,13 @@ function stateOf(app) {
 /* -------------------------------------------------------------------- SSE */
 
 const sseClients = new Set();
+// The same events, inside Rack (the Claude connector waits on update-done).
+const events = new (require("events").EventEmitter)();
+events.setMaxListeners(50);
 function broadcast(event) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
   for (const res of sseClients) res.write(data);
+  events.emit("event", event);
 }
 
 /* ------------------------------------------------------------ port control */
@@ -1401,6 +1405,14 @@ const server = http.createServer(async (req, res) => {
     if (parts[1] === "cf" && parts[2] === "log" && req.method === "GET") {
       const t = tunnels.get(tKey(url.searchParams.get("app"), url.searchParams.get("cmd")));
       return sendJSON(res, 200, { log: t ? t.log : [] });
+    }
+
+    // GET /api/mcp  → the Claude connector's state (and its access key)
+    // POST /api/mcp {action: "enable" | "disable" | "new-key", port?}
+    if (parts[1] === "mcp" && req.method === "GET") return sendJSON(res, 200, connector.status());
+    if (parts[1] === "mcp" && req.method === "POST") {
+      const r = connector.configure(await readBody(req));
+      return sendJSON(res, r.ok ? 200 : 400, r);
     }
 
     // GET /api/settings  → controller-wide settings   POST /api/settings {appsDir?, keepApps?}
@@ -2807,6 +2819,25 @@ function releaseKept() {
   for (const slots of runtime.values()) for (const s of slots) if (s.proc && s.proc.detached) s.proc.release();
   for (const t of tunnels.values()) if (t.proc && t.proc.detached) t.proc.release();
 }
+
+// The Claude connector (lib/mcp.js): an MCP server on a port of its own.
+const connector = require("./lib/mcp").create({
+  ROOT,
+  VERSION,
+  events,
+  apps: () => apps,
+  stateOf,
+  slotsFor,
+  startApp,
+  stopApp,
+  waitStopped,
+  updateApp,
+  checkUpdates,
+  updatesPayload,
+  statsPayload,
+  exposureState,
+  selfUpdate,
+});
 
 server.listen(CONTROL_PORT, async () => {
   const url = `http://localhost:${CONTROL_PORT}`;

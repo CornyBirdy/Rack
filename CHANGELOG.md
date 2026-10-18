@@ -10,6 +10,13 @@
   so a public URL doesn't blink during an update. Closing Rack's window or
   Ctrl+C still stops everything. **⚙ → Keep apps running on update** switches
   back to the old behaviour (stop, update, start again).
+- **New: ✳ Claude connector** (⚙ menu) — an MCP server so Claude can list your
+  apps, read their logs, start/stop/restart and update them, check for
+  updates, see machine load and what's exposed, and update Rack. It runs on a
+  port of its own (7800) that answers only the connector, so it can be
+  published with Funnel for claude.ai without publishing the dashboard. Sign-in
+  is an access key Rack makes: Claude Code sends it as a header, claude.ai asks
+  for it once on an OAuth sign-in page. **New key** signs every Claude out.
 
 ## v0.12.0
 - **Usage stats.** Every running app shows its CPU and memory live: beside its

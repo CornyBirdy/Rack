@@ -25,6 +25,7 @@
           <button id="btn-keep" class="menu-item" title="Apps carry on running while Rack updates or restarts, and Rack reconnects to them">⇄ <span>Keep apps running on update: on</span></button>
           <button id="btn-exposure" class="menu-item">◎ <span>Exposure manager</span></button>
           <button id="btn-cf" class="menu-item">☁ <span>Set up Cloudflare</span></button>
+          <button id="btn-mcp" class="menu-item" title="Let Claude see and run your apps (an MCP server)">✳ <span>Claude connector</span></button>
           <button id="btn-sdk" class="menu-item">⧉ <span>Copy SDK prompt</span></button>
           <button id="btn-check-updates" class="menu-item">⟲ <span>Check for updates</span></button>
           <button id="btn-update-rack" class="menu-item" hidden>⟳ <span>Update Rack</span></button>
@@ -388,6 +389,22 @@
   </div>
 
   <!-- ======================= apps folder modal ======================= -->
+  <div id="mcp-modal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <h3>Claude connector</h3>
+      <p class="muted">
+        An MCP server so Claude can see your apps, read their logs, and start, stop, restart and
+        update them — "why is Shelf down?", "update everything". It runs on a port of its own that
+        answers nothing else, so you can publish it without publishing this dashboard.
+      </p>
+      <div id="mcp-body"></div>
+      <p id="mcp-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button id="mcp-close" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="folder-modal" class="modal-backdrop" hidden>
     <div class="modal">
       <h3>Apps folder</h3>

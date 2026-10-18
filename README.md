@@ -220,6 +220,34 @@ update script will do); press **⟳ Update** to find out. A repo it can't reach 
 no network, credentials needed — reports that instead of hanging: checks can't
 raise a password prompt and give up after 45 seconds.
 
+## Claude connector (⚙ → ✳ Claude connector)
+
+Rack has a built-in [MCP](https://modelcontextprotocol.io) server, so Claude can
+look after your apps: "is everything running?", "why is Shelf erroring?",
+"update Rack-MC and tell me what changed". Claude can list apps, read their
+logs (or just the errors), start, stop, restart and update them (an update runs
+the app's ⟳ Update and returns its output), check every repo for updates, see
+the machine's CPU / memory / disk and per-app usage, list what's exposed to the
+tailnet or internet, and update Rack itself.
+
+Turn it on in **⚙ → ✳ Claude connector**. It listens on a **port of its own**
+(7800 by default) that serves nothing but the connector — Rack's dashboard has
+no sign-in, so publishing the dashboard's port would publish everything; this
+port is safe to publish. Signing in uses an **access key** shown in the same
+dialog:
+
+- **Claude Code** on your network — the dialog has the command to copy:
+  `claude mcp add --transport http rack http://<pc>:7800/mcp --header "Authorization: Bearer <key>"`.
+- **claude.ai / the Claude app** need an `https://` address: publish port 7800
+  with Tailscale Funnel in the **◎ Exposure manager**, then in Claude **Settings
+  → Connectors → Add custom connector** with `https://<that address>/mcp`.
+  Claude opens Rack's sign-in page; paste the access key once and you're done
+  (Claude keeps itself signed in, up to 6 months unused).
+
+**New key** in the dialog signs every connected Claude out; **Turn off** stops
+the connector. Its settings and sign-ins live in `.rack-mcp.json` (not in git).
+Set `RACK_MCP_URL` if Rack guesses its public address wrong.
+
 ## Updating Rack itself (⚙ → ⟳ Update Rack)
 
 **⟳ Update Rack** pulls Rack's own repo and restarts the controller — **without

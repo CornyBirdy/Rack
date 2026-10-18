@@ -1288,3 +1288,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   .modal-actions { flex-wrap: wrap; }
   #update-log { height: 50dvh; }
 }
+
+/* Claude connector */
+.mcp-key {
+  flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); font-family: Consolas, monospace; font-size: 0.82rem; overflow-x: auto; white-space: nowrap;
+}
+#mcp-cli { white-space: normal; word-break: break-all; }
+#mcp-cli.copied { border-color: var(--green); color: var(--green); }

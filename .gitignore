@@ -11,3 +11,4 @@ node_modules/
 
 # processes kept running across Rack restarts (lib/hosted.js)
 .rack-run/
+.rack-mcp.json

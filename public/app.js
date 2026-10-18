@@ -1976,6 +1976,84 @@ function openExposure(focus) {
 }
 
 $("btn-exposure").onclick = () => openExposure(null);
+
+/* ------------------------------------------------------------ Claude connector */
+// lib/mcp.js. The access key is what signs Claude in: sent as a header by
+// Claude Code, or pasted once on the sign-in page claude.ai opens.
+const mcpModal = $("mcp-modal");
+let mcpShowKey = false;
+
+async function mcpAction(body) {
+  $("mcp-error").hidden = true;
+  const r = await api("/api/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.error) {
+    $("mcp-error").textContent = r.error;
+    $("mcp-error").hidden = false;
+  }
+  renderMcp(r.error ? await api("/api/mcp") : r);
+}
+
+function renderMcp(s) {
+  const body = $("mcp-body");
+  if (!s.enabled) {
+    body.innerHTML = `
+      <label>Port <input id="mcp-port" type="number" min="1" max="65535" value="${s.port}" style="width:110px" /></label>
+      <div class="modal-actions" style="justify-content:flex-start"><button id="mcp-on" class="btn btn-run">Turn on</button></div>`;
+    $("mcp-on").onclick = () => mcpAction({ action: "enable", port: Number($("mcp-port").value) || s.port });
+    return;
+  }
+  const host = location.hostname || "localhost";
+  const url = `http://${host}:${s.port}/mcp`;
+  const shown = mcpShowKey ? s.key : "•".repeat(Math.min(24, s.key.length));
+  const cli = `claude mcp add --transport http rack ${url} --header "Authorization: Bearer ${s.key}"`;
+  body.innerHTML = `
+    <p class="${s.listening ? "" : "modal-error"}" style="margin:4px 0 10px">${
+      s.listening
+        ? `● On — listening on port <b>${s.port}</b>${s.connected ? ` · ${s.connected} Claude sign-in${s.connected === 1 ? "" : "s"}` : ""}`
+        : `Not listening: ${expEsc(s.error || "starting…")}`
+    }</p>
+    <label>Access key</label>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <code class="mcp-key">${expEsc(shown)}</code>
+      <button id="mcp-show" class="btn btn-ghost">${mcpShowKey ? "Hide" : "Show"}</button>
+      <button id="mcp-copy" class="btn btn-ghost">Copy</button>
+    </div>
+    <ol class="cf-steps">
+      <li><b>Claude Code</b> on this network — run (click to copy):<br><code id="mcp-cli">${expEsc(cli)}</code></li>
+      <li><b>claude.ai or the Claude app</b> needs an https address: in
+        <button id="mcp-expose" class="btn-link">◎ Exposure manager</button> publish port <b>${s.port}</b> to the internet
+        (Funnel). Then in Claude: <b>Settings → Connectors → Add custom connector</b>, URL
+        <code>https://&lt;that address&gt;/mcp</code>, and paste the access key when it asks you to sign in.</li>
+    </ol>
+    <div class="modal-actions" style="justify-content:flex-start;margin-top:4px">
+      <button id="mcp-rotate" class="btn btn-ghost" title="Every connected Claude has to sign in again">New key</button>
+      <button id="mcp-off" class="btn btn-danger-ghost" style="margin-top:0">Turn off</button>
+    </div>`;
+  $("mcp-show").onclick = () => { mcpShowKey = !mcpShowKey; renderMcp(s); };
+  const copied = (el) => async () => {
+    if (!(await copyText(el === "key" ? s.key : cli))) return;
+    const b = el === "key" ? $("mcp-copy") : $("mcp-cli");
+    b.classList.add("copied");
+    if (el === "key") b.textContent = "Copied";
+    setTimeout(() => b.isConnected && (b.classList.remove("copied"), el === "key" && (b.textContent = "Copy")), 1500);
+  };
+  $("mcp-copy").onclick = copied("key");
+  $("mcp-cli").onclick = copied("cli");
+  $("mcp-expose").onclick = () => { mcpModal.hidden = true; openExposure(null); };
+  $("mcp-rotate").onclick = () => {
+    if (confirm("Make a new access key? Every Claude signed in with the old one is signed out.")) mcpAction({ action: "new-key" });
+  };
+  $("mcp-off").onclick = () => mcpAction({ action: "disable" });
+}
+
+$("btn-mcp").onclick = async () => {
+  settingsMenu.hidden = true;
+  $("mcp-error").hidden = true;
+  mcpModal.hidden = false;
+  renderMcp(await api("/api/mcp"));
+};
+$("mcp-close").onclick = () => (mcpModal.hidden = true);
+mcpModal.onclick = (e) => { if (e.target === mcpModal) mcpModal.hidden = true; };
 $("exp-close").onclick = () => (expModal.hidden = true);
 $("exp-refresh").onclick = () => loadExposure(true);
 $("exp-hide-local").onchange = () => renderExposure();
