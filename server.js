@@ -9,8 +9,9 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { spawn, exec, execFile, execSync } = require("child_process");
+const hosted = require("./lib/hosted");
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -105,9 +106,10 @@ function saveApps() {
 }
 loadApps();
 
-// Controller-wide, per-machine settings (currently just the apps folder that
-// "Install from GitHub" clones into). Gitignored, like apps.json.
-let settings = { appsDir: null };
+// Controller-wide, per-machine settings: the apps folder that "Install from
+// GitHub" clones into, and whether apps keep running while Rack restarts
+// (keepApps — see lib/hosted.js). Gitignored, like apps.json.
+let settings = { appsDir: null, keepApps: true };
 function loadSettings() {
   try {
     settings = { ...settings, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) };
@@ -293,17 +295,90 @@ function envFor(app, cmd, effPort) {
   return env;
 }
 
-function spawnCommand(cmd, effPort, env) {
+// What `env` sets that Rack's own environment doesn't — all a host needs to be
+// told, since it inherits the rest from Rack.
+function envDelta(env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (process.env[k] !== v) out[k] = v;
+  return out;
+}
+
+// Starts one process. With keepApps on it runs under a host of its own
+// (lib/host.js) so it outlives Rack restarting; `key` names that host so the
+// next Rack can find it. Either way the result looks like a ChildProcess.
+function spawnCommand(cmd, effPort, env, key, meta) {
   const args = buildRunArgs(cmd, effPort);
   const isBatch = /\.(bat|cmd)$/i.test(cmd.exe);
+  let line = null;
   if (cmd.raw || isBatch) {
     // Run through a shell. Quote file paths (but not a raw command string).
     const q = (s) => (/\s/.test(s) ? `"${s}"` : s);
     const head = cmd.raw ? cmd.exe : q(cmd.exe);
-    const line = [head, ...args.map(q)].join(" ");
-    return spawn(line, { cwd: cmd.dir, windowsHide: true, shell: true, env });
+    line = [head, ...args.map(q)].join(" ");
   }
+  if (settings.keepApps && key)
+    return hosted.launch(key, line ? { line, cwd: cmd.dir, env: envDelta(env), meta } : { file: cmd.exe, args, cwd: cmd.dir, env: envDelta(env), meta });
+  if (line) return spawn(line, { cwd: cmd.dir, windowsHide: true, shell: true, env });
   return spawn(cmd.exe, args, { cwd: cmd.dir, windowsHide: true, env });
+}
+
+const procKey = (appId, idx) => `app-${appId}-${idx}`;
+
+// Hooks a running process up to its console and status: output into the log,
+// and on exit the slot is cleared (and its tunnel taken down). announce=false
+// for one reconnected after a restart — it was started long ago.
+function attachProc(app, i, slot, proc, { announce = true } = {}) {
+  const cmd = app.commands[i];
+  const started = () => {
+    slot.pid = proc.pid;
+    if (announce) {
+      const where = slot.effPort ? ` on port ${slot.effPort}` : "";
+      pushLog(app, i, "out", `[controller] started ${cmd.name} (pid ${proc.pid})${where}`);
+    }
+    broadcast({ type: "status", app: stateOf(app) });
+  };
+  if (proc.pid) started();
+  else proc.once("spawn", started);
+  proc.stdout.on("data", (d) => pushLog(app, i, "out", d));
+  proc.stderr.on("data", (d) => pushLog(app, i, "err", d));
+  proc.on("error", (e) => pushLog(app, i, "err", `[controller] error: ${e.message}`));
+  proc.on("exit", (code, signal) => {
+    pushLog(app, i, "out", `[controller] process exited (code ${code ?? signal})`);
+    // A late exit event from an older process must not clear a fresh one
+    // (a restart can start the replacement before this fires).
+    if (slot.proc === proc) {
+      slot.proc = null;
+      // A tunnel must never outlive what it publishes, or the public URL
+      // starts answering 502s from Cloudflare's edge.
+      stopTunnel(app.id, i);
+    }
+    broadcast({ type: "status", app: stateOf(app) });
+  });
+}
+
+// After Rack restarts (an update, a crash, closing it from Task Manager):
+// reconnect to every process a host kept running, console and all, before
+// anything autostarts. Then the same for their Cloudflare tunnels.
+async function adoptKept() {
+  for (const app of apps) {
+    const slots = slotsFor(app);
+    for (let i = 0; i < app.commands.length; i++) {
+      const r = await hosted.adopt(procKey(app.id, i)).catch(() => ({ proc: null }));
+      if (r.proc) {
+        const slot = slots[i];
+        slot.proc = r.proc;
+        slot.startedAt = r.proc.startedAt;
+        slot.effPort = (r.proc.meta && r.proc.meta.port) || app.commands[i].port;
+        slot.pid = r.proc.pid;
+        slot.log = r.lines.slice(-MAX_LOG_LINES).map(([s, line]) => ({ s, line }));
+        pushLog(app, i, "out", `[controller] reconnected to ${app.commands[i].name} (pid ${r.proc.pid}) — it kept running while Rack restarted`);
+        attachProc(app, i, slot, r.proc, { announce: false });
+      } else if (r.exit) {
+        pushLog(app, i, "out", `[controller] ${app.commands[i].name} stopped while Rack was closed (code ${r.exit.code ?? r.exit.signal ?? r.exit.error ?? "?"})`);
+      }
+    }
+    for (let i = 0; i < app.commands.length; i++) await adoptTunnel(app, i);
+  }
 }
 
 function startApp(app) {
@@ -338,33 +413,16 @@ function startApp(app) {
 
     let proc;
     try {
-      proc = spawnCommand(cmd, effPort, envFor(app, cmd, effPort));
+      proc = spawnCommand(cmd, effPort, envFor(app, cmd, effPort), procKey(app.id, i), { port: effPort || null });
     } catch (e) {
       pushLog(app, i, "err", `[controller] failed to start: ${e.message}`);
       return;
     }
     slot.proc = proc;
-    slot.pid = proc.pid;
+    slot.pid = proc.pid || null;
     slot.startedAt = Date.now();
     started++;
-
-    const where = effPort ? ` on port ${effPort}` : "";
-    pushLog(app, i, "out", `[controller] started ${cmd.name} (pid ${proc.pid})${where}`);
-    proc.stdout.on("data", (d) => pushLog(app, i, "out", d));
-    proc.stderr.on("data", (d) => pushLog(app, i, "err", d));
-    proc.on("error", (e) => pushLog(app, i, "err", `[controller] error: ${e.message}`));
-    proc.on("exit", (code, signal) => {
-      pushLog(app, i, "out", `[controller] process exited (code ${code ?? signal})`);
-      // A late exit event from an older process must not clear a fresh one
-      // (a restart can start the replacement before this fires).
-      if (slot.proc === proc) {
-        slot.proc = null;
-        // A tunnel must never outlive what it publishes, or the public URL
-        // starts answering 502s from Cloudflare's edge.
-        stopTunnel(app.id, i);
-      }
-      broadcast({ type: "status", app: stateOf(app) });
-    });
+    attachProc(app, i, slot, proc);
 
     // Auto-expose: a bound tunnel comes up with the process. The short delay
     // just keeps the logs tidy — cloudflared would retry anyway.
@@ -402,7 +460,8 @@ function stopApp(app) {
     }
     if (!slot.proc) return;
     pushLog(app, i, "out", "[controller] stopping...");
-    killPid(slot.pid);
+    if (slot.proc.detached) slot.proc.kill(); // the host stops the whole tree
+    else killPid(slot.pid);
     stopped++;
   });
   const hasStopCmd = app.commands.some((c) => c.stopCommand);
@@ -727,12 +786,19 @@ function selfUpdate() {
       return broadcast({ type: "self-update-done", ok: true, changed: false });
     }
     emit("out", "[update] Updated — restarting Rack...");
+    // Processes kept by a host carry on and are reconnected after the restart;
+    // only ones Rack is the parent of (started with keepApps off) have to be
+    // stopped now and started again after.
+    const restart = apps.filter((a) => slotsFor(a).some((s) => s.proc && !s.proc.detached));
+    const kept = apps.filter((a) => slotsFor(a).some((s) => s.proc && s.proc.detached));
+    if (kept.length) emit("out", `[update] Keeping ${kept.map((a) => a.name).join(", ")} running — Rack reconnects to ${kept.length === 1 ? "it" : "them"} after the restart.`);
+    if (restart.length) emit("out", `[update] Restarting ${restart.map((a) => a.name).join(", ")} with Rack.`);
     try {
-      const runningIds = apps.filter((a) => slotsFor(a).some((s) => s.proc)).map((a) => a.id);
-      fs.writeFileSync(RESTORE_FILE, JSON.stringify(runningIds));
+      fs.writeFileSync(RESTORE_FILE, JSON.stringify(restart.map((a) => a.id)));
     } catch {}
-    for (const a of apps) stopApp(a); // avoid orphaned children across the restart
-    broadcast({ type: "self-update-restart" });
+    for (const a of restart) stopApp(a); // avoid orphaned children across the restart
+    releaseKept();
+    broadcast({ type: "self-update-restart", kept: kept.length, restarted: restart.length });
     setTimeout(() => process.exit(RESTART_EXIT_CODE), 1000);
   });
   return { ok: true };
@@ -1337,15 +1403,21 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { log: t ? t.log : [] });
     }
 
-    // GET /api/settings  → controller-wide settings   POST /api/settings {appsDir}
+    // GET /api/settings  → controller-wide settings   POST /api/settings {appsDir?, keepApps?}
+    const settingsOut = () => ({ appsDir: settings.appsDir, keepApps: !!settings.keepApps, git: hasGit() });
     if (parts[1] === "settings" && req.method === "GET") {
-      return sendJSON(res, 200, { appsDir: settings.appsDir, git: hasGit() });
+      return sendJSON(res, 200, settingsOut());
     }
     if (parts[1] === "settings" && req.method === "POST") {
       const body = await readBody(req);
       const r = "appsDir" in body ? setAppsDir(body.appsDir) : { ok: true };
       if (!r.ok) return sendJSON(res, 400, { error: r.error });
-      return sendJSON(res, 200, { appsDir: settings.appsDir, git: hasGit() });
+      // Takes effect for processes started from now on; running ones stay as they are.
+      if ("keepApps" in body) {
+        settings.keepApps = !!body.keepApps;
+        saveSettings();
+      }
+      return sendJSON(res, 200, settingsOut());
     }
 
     // POST /api/install  {url, name?, category?, autostart?}
@@ -1703,17 +1775,30 @@ function startTunnel(app, idx) {
   const args = ["tunnel", "--no-autoupdate", "run", "--url", `http://localhost:${port}`, bind.tunnel];
   let proc;
   try {
-    proc = spawn(cf(), args, { cwd: ROOT, windowsHide: true });
+    // Kept by a host like the process it publishes, so a Rack update doesn't
+    // take the public URL down either.
+    proc = settings.keepApps
+      ? hosted.launch(tunnelProcKey(app.id, idx), { file: cf(), args, cwd: ROOT, meta: { port } })
+      : spawn(cf(), args, { cwd: ROOT, windowsHide: true });
   } catch (e) {
     t.status = "failed";
     t.error = e.message;
     broadcast({ type: "cf" });
     return { ok: false, error: e.message };
   }
-  t.proc = proc;
-  t.pid = proc.pid;
   tunnelPush(t, "out", `[rack] cloudflared ${args.join(" ")}`);
+  wireTunnel(key, t, proc);
+  broadcast({ type: "cf" });
+  return { ok: true };
+}
 
+const tunnelProcKey = (appId, idx) => `tunnel-${appId}-${idx}`;
+
+// cloudflared's output decides the tunnel's status; its exit clears it.
+function wireTunnel(key, t, proc) {
+  t.proc = proc;
+  t.pid = proc.pid || null;
+  if (!t.pid) proc.once("spawn", () => (t.pid = proc.pid));
   const pump = (stream) => (d) => {
     let changed = false;
     for (const line of d.toString().split(/\r?\n/)) {
@@ -1749,9 +1834,25 @@ function startTunnel(app, idx) {
     }
     broadcast({ type: "cf" });
   });
+}
 
-  broadcast({ type: "cf" });
-  return { ok: true };
+// A tunnel a host kept up while Rack restarted: take it back, reading its
+// recent output for whether it had connected.
+async function adoptTunnel(app, idx) {
+  const cmd = app.commands[idx];
+  const r = await hosted.adopt(tunnelProcKey(app.id, idx)).catch(() => ({ proc: null }));
+  if (!r.proc) return;
+  const bind = cmd && cmd.cloudflare;
+  if (!bind || !bind.tunnel) return r.proc.kill(); // unbound while Rack was away
+  const key = tKey(app.id, idx);
+  const t = { proc: null, pid: null, name: bind.tunnel, hostname: bind.hostname || null, status: "connecting", error: null, log: [] };
+  for (const [s, line] of r.lines.slice(-CF_MAX_LOG)) {
+    tunnelPush(t, s, line);
+    if (/Registered tunnel connection|Connection [\w-]+ registered/i.test(line)) t.status = "public";
+  }
+  tunnelPush(t, "out", "[rack] reconnected — the tunnel stayed up while Rack restarted");
+  tunnels.set(key, t);
+  wireTunnel(key, t, r.proc);
 }
 
 // Killing is asynchronous (taskkill), so a re-point has to wait for the old
@@ -1774,7 +1875,8 @@ function stopTunnel(appId, idx) {
   if (t.proc) {
     t.stopping = true;
     t.status = "off";
-    killPid(t.pid);
+    if (t.proc.detached) t.proc.kill();
+    else killPid(t.pid);
   } else {
     tunnels.delete(key);
   }
@@ -2699,15 +2801,27 @@ function setRunOnBoot(enable) {
 
 /* ------------------------------------------------------------ start listening */
 
-server.listen(CONTROL_PORT, () => {
+// Let go of every kept process and tunnel without stopping them (Rack is about
+// to exit and come back).
+function releaseKept() {
+  for (const slots of runtime.values()) for (const s of slots) if (s.proc && s.proc.detached) s.proc.release();
+  for (const t of tunnels.values()) if (t.proc && t.proc.detached) t.proc.release();
+}
+
+server.listen(CONTROL_PORT, async () => {
   const url = `http://localhost:${CONTROL_PORT}`;
   console.log(`Rack running at ${url}`);
   if (process.platform === "win32" && !process.argv.includes("--no-open")) {
     exec(`start "" ${url}`);
   }
+  // Apps that kept running while Rack was away come back first, so autostart
+  // doesn't start a second copy of them.
+  await adoptKept().catch((e) => console.log("Reconnecting to running apps failed: " + e.message));
+  const back = apps.filter((a) => slotsFor(a).some((s) => s.proc));
+  if (back.length) console.log(`Reconnected to ${back.map((a) => a.name).join(", ")}.`);
   // Auto-start apps marked "autostart" (e.g. after a reboot).
   for (const app of apps) {
-    if (app.autostart) {
+    if (app.autostart && !slotsFor(app).every((s) => s.proc)) {
       console.log(`Auto-starting ${app.name}...`);
       startApp(app);
     }
@@ -2719,7 +2833,7 @@ server.listen(CONTROL_PORT, () => {
       fs.unlinkSync(RESTORE_FILE);
       for (const id of ids) {
         const app = apps.find((a) => a.id === id);
-        if (app && !app.autostart) {
+        if (app && !app.autostart && !slotsFor(app).every((s) => s.proc)) {
           console.log(`Restoring ${app.name} after update...`);
           startApp(app);
         }
@@ -2735,6 +2849,10 @@ server.listen(CONTROL_PORT, () => {
 
 /* ------------------------------------------------- clean shutdown of children */
 
+// Closing Rack (Ctrl+C, closing its window) still stops every app it runs, as
+// it always has — kept processes are told to stop through their hosts, which
+// do it even after Rack is gone. Only an update (or Rack being killed) leaves
+// them running.
 let shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return;
@@ -2742,7 +2860,10 @@ function shutdown() {
   for (const app of apps) stopApp(app);
   // Belt and braces: a surviving cloudflared would keep a public hostname
   // pointing at a port nothing is listening on any more.
-  for (const t of tunnels.values()) if (t.pid) killPid(t.pid);
+  for (const t of tunnels.values()) {
+    if (t.proc && t.proc.detached) t.proc.kill();
+    if (t.pid) killPid(t.pid);
+  }
   if (cfSetupProc) killPid(cfSetupProc.pid);
   if (installProc) killPid(installProc.pid);
   stopWinSampler();
@@ -2750,3 +2871,6 @@ function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+// Closing the console window on Windows. Kept apps aren't in that console any
+// more, so they'd otherwise outlive it.
+process.on("SIGHUP", shutdown);

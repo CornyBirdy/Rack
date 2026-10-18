@@ -9,7 +9,7 @@ nothing pops up in a stray window). Zero dependencies — just Node.js.
 
 Double-click **start.bat**. It starts the controller and opens the dashboard
 in your browser at http://localhost:7799. Closing the window kills the
-controller and every app it started.
+controller and every app it started (updating Rack doesn't — see below).
 
 ## Install from GitHub
 
@@ -222,8 +222,17 @@ raise a password prompt and give up after 45 seconds.
 
 ## Updating Rack itself (⚙ → ⟳ Update Rack)
 
-**⟳ Update Rack** pulls Rack's own repo and restarts the controller, bringing
-back whatever was running before. When there are new commits waiting it reads
+**⟳ Update Rack** pulls Rack's own repo and restarts the controller — **without
+stopping your apps**. Each process Rack starts runs under a tiny host process of
+its own (`lib/host.js`) that holds its console, so the controller can go away and
+come back: on restart Rack reconnects to every app that is still running, with
+its console as it was plus whatever it printed in the meantime. Cloudflare
+tunnels are kept the same way, so public URLs stay up. The same goes for Rack
+crashing or being killed from Task Manager — next time it starts, your apps are
+still there. (Closing Rack's window or pressing Ctrl+C still stops everything,
+as before.) **⚙ → Keep apps running on update** turns this off; then an update
+stops your apps and starts them again afterwards. The setting applies to
+processes started after you change it. When there are new commits waiting it reads
 **Update Rack — 3 new**. It needs Rack to have been started from **start.bat**,
 whose supervisor loop is what relaunches it; started any other way the item is
 hidden and you update with a `git pull` in Rack's folder. A pull with nothing in

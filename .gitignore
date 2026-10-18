@@ -8,3 +8,6 @@ Rack.lnk
 # misc
 *.log
 node_modules/
+
+# processes kept running across Rack restarts (lib/hosted.js)
+.rack-run/

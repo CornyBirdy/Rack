@@ -60,9 +60,30 @@ async function loadSettings() {
     appsDir = s.appsDir || null;
     gitOk = s.git !== false;
     renderAppsDir();
+    setKeepLabel(s.keepApps !== false);
   } catch {}
 }
 loadSettings();
+
+/* ------------------------------------------------- keep apps running on update */
+// On: each process runs under a small host of its own, so ⟳ Update Rack (or Rack
+// crashing) doesn't stop it, and Rack reconnects to it when it comes back.
+// Closing Rack still stops everything.
+function setKeepLabel(on) {
+  const b = $("btn-keep");
+  b.querySelector("span").textContent = `Keep apps running on update: ${on ? "on" : "off"}`;
+  b.classList.toggle("on", !!on);
+}
+$("btn-keep").onclick = async () => {
+  const on = !$("btn-keep").classList.contains("on");
+  const res = await api("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keepApps: on }),
+  });
+  if (res.error) return alert("Couldn't change that: " + res.error);
+  setKeepLabel(res.keepApps);
+};
 
 const folderModal = $("folder-modal");
 function openFolderModal() {
@@ -1896,7 +1917,8 @@ function connectEvents() {
       cfSetupRunning = null;
       cfRefreshSetup();
     } else if (ev.type === "self-update-restart") {
-      $("update-sub").textContent = "New version pulled — restarting Rack…";
+      $("update-sub").textContent = "New version pulled — restarting Rack" +
+        (ev.kept && !ev.restarted ? " (your apps keep running)…" : ev.restarted ? " and the apps it was running…" : "…");
       pollBackAndReload();
     }
   };

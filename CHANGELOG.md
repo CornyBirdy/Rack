@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.13.0
+- **Updating Rack no longer restarts your apps.** Every process now runs under a
+  small host process of its own (`lib/host.js`) that holds its console, instead
+  of being Rack's child — so ⟳ Update Rack, Rack crashing or Rack being killed
+  leaves your apps running. When Rack comes back it reconnects to each one: the
+  console is as it was, with whatever was printed meanwhile, and Stop, Restart,
+  stats and ports all work as before. Cloudflare tunnels are kept the same way,
+  so a public URL doesn't blink during an update. Closing Rack's window or
+  Ctrl+C still stops everything. **⚙ → Keep apps running on update** switches
+  back to the old behaviour (stop, update, start again).
+
 ## v0.12.0
 - **Usage stats.** Every running app shows its CPU and memory live: beside its
   name in the sidebar, as CPU / Memory tiles with a 10-minute sparkline on the
