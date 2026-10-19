@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.13.2
+- **New look: the Rack Suite "Sunset" palette.** Dark is the main theme and
+  light is still one click away (⚙ → Theme). Periwinkle is the one action
+  colour — Run, selected items, focus and toggles — and charts take periwinkle,
+  pink and orange in turn. Every status says what it is in words and an icon,
+  not just a colour: ✓ Running, ■ Stopped, ⚠ High / ⚠ Critical on a busy CPU,
+  memory or disk, and "⚠ 2 errors" on a console. Buttons and inputs are a
+  steady 32px high (44px on touch screens) and the sidebar is a little wider.
+  Consoles stay dark in both themes.
+
+## v0.13.1
+- **Update checks are much faster.** Rack and every app are checked at the same
+  time instead of one after another, and the fetch skips tags and git's
+  auto-maintenance pass.
+- **No more ⟲ Check for updates button.** The ⚙ menu just says whether there's
+  an update — *Everything is up to date*, or **⟳ Update Rack — 3 new**, which is
+  the button to install it. Rack keeps that fresh itself: every 30 minutes
+  (was 6 hours) and whenever you open the menu on an answer over 5 minutes old.
+
 ## v0.13.0
 - **Updating Rack no longer restarts your apps.** Every process now runs under a
   small host process of its own (`lib/host.js`) that holds its console, instead

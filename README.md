@@ -199,21 +199,24 @@ Below it, every exposure method is listed **with what's using it**:
 > hides the name and path of other users' processes from a normal user; the
 > manager says so when that's the case.
 
-## Checking for updates (⚙ → ⟲ Check for updates)
+## Update status (⚙ menu)
 
-Rack can tell you what's out of date **without running anything**. It does a
-`git fetch` in Rack's own folder and in every app that has an update command,
-then compares your checkout against the branch it tracks:
+Rack tells you what's out of date **without running anything** — there's no
+button to press. It does a `git fetch` in Rack's own folder and in every app
+that has an update command (all at once, so it's as quick as the slowest
+remote), then compares your checkout against the branch it tracks:
 
+- The ⚙ menu has one line for it: *Everything is up to date*, *Rack is up to
+  date · 2 apps have updates*, or **⟳ Update Rack — 3 new** — which is then the
+  button that updates Rack.
 - Apps with new commits get a **⟳** badge in the sidebar, and their **⟳ Update**
   button reads **Update — 3 new**.
 - The app's details card lists the incoming commit subjects, so you can see
   what's coming before you pull.
-- The menu item itself summarizes — *Update available: Rack + 2 apps*, or *Up to
-  date · checked 5m ago*.
 
-It also checks on its own: 20 seconds after Rack starts, every 6 hours, and
-after any update runs. Nothing is ever pulled by a check — it only looks.
+It checks on its own: 20 seconds after Rack starts, every 30 minutes, after any
+update runs, and when you open the ⚙ menu and the last check is more than 5
+minutes old. Nothing is ever pulled by a check — it only looks.
 
 An app whose folder isn't a git checkout says so (Rack can't know what a custom
 update script will do); press **⟳ Update** to find out. A repo it can't reach —
