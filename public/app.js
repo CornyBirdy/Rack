@@ -1104,7 +1104,7 @@ function renderConsoles() {
       <div class="term-head">
         <span class="dot ${cmd.running ? "running" : ""}"></span>
         <span class="name"></span>
-        <span class="err-badge" hidden>⚠ 0</span>
+        <span class="err-badge" hidden>⚠ 0 errors</span>
         <button class="term-clear">Clear</button>
       </div>
       <pre class="term" data-cmd="${i}"></pre>`;
@@ -1163,7 +1163,7 @@ function setBadge(cmd, n) {
   const b = badgeFor(cmd);
   if (!b) return;
   b.hidden = n === 0;
-  b.textContent = (b.textContent.startsWith("◧") ? "◧ " : "⚠ ") + n;
+  b.textContent = (b.textContent.startsWith("◧") ? "◧ " : "⚠ ") + n + (n === 1 ? " error" : " errors");
   b.dataset.count = n;
 }
 
