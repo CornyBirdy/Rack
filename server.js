@@ -11,7 +11,7 @@ const os = require("os");
 const { spawn, exec, execFile, execSync } = require("child_process");
 const hosted = require("./lib/hosted");
 
-const VERSION = "0.13.2";
+const VERSION = "0.13.3";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");

@@ -1,72 +1,72 @@
 /* ============================= theme tokens =============================
-   Rack Suite "Sunset" palette. Dark is the primary theme; light is the
+   Rack Suite "Twilight" palette. Dark is the primary theme; light is the
    secondary one. Every colour in this file comes from these tokens. */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --ground: #0d0e13;
-  --surface-sunken: #111217;
-  --surface: #18191e;
-  --surface-raised: #202127;
-  --surface-track: #2c2d33;
-  --hairline: #27292e;
-  --border-control: #828593;
+  --ground: #22242b;
+  --surface-sunken: #282a31;
+  --surface: #2e3038;
+  --surface-raised: #373941;
+  --surface-track: #44464e;
+  --hairline: #40424a;
+  --border-control: #9a9eab;
   --ink: #e6e7ed;
-  --ink-muted: #a5a7b1;
-  --accent: #9babfd;
-  --on-accent: #121524;
-  --accent-text: #a9b8ff;
-  --accent-soft: rgba(155, 171, 253, 0.14);
-  --accent-2: #ea91bc;
-  --accent-3: #f2a26a;
-  --success: #4dbd94;
-  --success-soft: rgba(77, 189, 148, 0.14);
-  --warning: #d9a441;
-  --warning-soft: rgba(217, 164, 65, 0.14);
-  --danger: #f68795;
-  --danger-soft: rgba(246, 135, 149, 0.14);
-  --info: #62a0dd;
-  --info-soft: rgba(98, 160, 221, 0.14);
-  --shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --ink-muted: #bbbdc7;
+  --accent: #61c7c7;
+  --on-accent: #031a1a;
+  --accent-text: #75d3d3;
+  --accent-soft: rgba(97, 199, 199, 0.14);
+  --accent-2: #9ba7e1;
+  --accent-3: #d7a583;
+  --success: #80cdb0;
+  --success-soft: rgba(128, 205, 176, 0.14);
+  --warning: #e0bb6e;
+  --warning-soft: rgba(224, 187, 110, 0.14);
+  --danger: #f4a6af;
+  --danger-soft: rgba(244, 166, 175, 0.14);
+  --info: #95b9e6;
+  --info-soft: rgba(149, 185, 230, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 12px 32px -16px rgba(0, 0, 0, 0.8);
   --scrim: rgba(0, 0, 0, 0.55);
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --ground: #f5f6fe;
-  --surface-sunken: #eceef5;
-  --surface: #ffffff;
-  --surface-raised: #f1f3fa;
-  --surface-track: #e1e2ea;
-  --hairline: #dfe1e8;
+  --ground: #eef0f7;
+  --surface-sunken: #e7e9f0;
+  --surface: #f9fafe;
+  --surface-raised: #eceef5;
+  --surface-track: #dcdee5;
+  --hairline: #d9dae1;
   --border-control: #777a87;
-  --ink: #181a24;
-  --ink-muted: #525561;
-  --accent: #95a4f6;
-  --on-accent: #121524;
-  --accent-text: #464dbb;
-  --accent-soft: rgba(149, 164, 246, 0.16);
-  --accent-2: #ab4a7d;
-  --accent-3: #aa5910;
-  --success: #0b6f52;
-  --success-soft: rgba(11, 111, 82, 0.1);
-  --warning: #7e5500;
-  --warning-soft: rgba(126, 85, 0, 0.1);
-  --danger: #b8223a;
-  --danger-soft: rgba(184, 34, 58, 0.1);
-  --info: #1a58a6;
-  --info-soft: rgba(26, 88, 166, 0.1);
-  --shadow: 0 1px 4px rgba(24, 26, 36, 0.08);
-  --shadow-overlay: 0 12px 32px rgba(24, 26, 36, 0.18);
-  --scrim: rgba(24, 26, 36, 0.4);
+  --ink: #232630;
+  --ink-muted: #545764;
+  --accent: #6bcac9;
+  --on-accent: #031a1a;
+  --accent-text: #006768;
+  --accent-soft: rgba(107, 202, 201, 0.16);
+  --accent-2: #5c69bc;
+  --accent-3: #9f6d4b;
+  --success: #1f6f54;
+  --success-soft: rgba(31, 111, 84, 0.1);
+  --warning: #7a5a14;
+  --warning-soft: rgba(122, 90, 20, 0.1);
+  --danger: #a83a4d;
+  --danger-soft: rgba(168, 58, 77, 0.1);
+  --info: #2f5f9c;
+  --info-soft: rgba(47, 95, 156, 0.1);
+  --shadow: 0 1px 2px rgba(20, 24, 28, 0.12), 0 1px 3px rgba(20, 24, 28, 0.08);
+  --shadow-overlay: 0 12px 32px -12px rgba(20, 24, 28, 0.28);
+  --scrim: rgba(35, 38, 48, 0.4);
 }
 
 :root {
   /* console/terminal blocks stay dark in both themes */
   --console-ground: #0a0c0e;
   --console-ink: #cfd5db;
-  --console-danger: #f68795;
+  --console-danger: #f4a6af;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -85,6 +85,9 @@
 
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, monospace;
+
+  /* the faint ring that stands in for a button outline */
+  --ring-soft: inset 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
 
   --control-h: 32px;
   --sidebar-w: 264px;
@@ -151,7 +154,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   padding: 4px 8px;
   cursor: pointer;
 }
-.icon-btn:hover { color: var(--ink); border-color: var(--border-control); }
+.icon-btn:hover { color: var(--ink); background: var(--surface-raised); }
 
 .settings-menu {
   position: absolute;
@@ -281,7 +284,10 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   border-radius: var(--radius-control);
   background: var(--surface);
 }
-.app-filter:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* the box carries the focus ring, not the bare input inside it */
+.app-filter:focus-within { border-color: var(--accent); outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.app-filter input:focus-visible { outline: none !important; }
+
 .app-filter .filter-icon { color: var(--ink-muted); font-size: 0.95rem; }
 .app-filter input {
   flex: 1;
@@ -335,10 +341,12 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   cursor: pointer;
   text-align: left;
 }
-.app-item:hover { border-color: var(--accent); }
+.app-item:hover { background: var(--surface-raised); }
+/* the selected item: teal wash with a teal stripe down its left edge */
 .app-item.selected {
-  border-color: var(--accent);
+  border-color: var(--accent-soft);
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .app-item .name {
   flex: 1;
@@ -426,15 +434,18 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .uncat-zone.drop-into { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
 
 .add-app-btn {
+  min-height: var(--control-h);
   padding: 8px;
-  border: 1px dashed var(--ink-muted);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--ink-muted);
+  background: var(--surface-raised);
+  box-shadow: var(--ring-soft);
+  color: var(--ink);
   cursor: pointer;
+  font-family: inherit;
   font-size: 0.92rem;
 }
-.add-app-btn:hover { border-color: var(--accent); color: var(--accent-text); }
+.add-app-btn:hover { background: var(--surface-track); }
 
 /* ============================= topbar ============================= */
 .main {
@@ -477,6 +488,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .status-pill.stopped::before { content: "■"; font-size: 0.8em; }
 
 /* ============================= buttons ============================= */
+/* Soft buttons: no hard outlines. A plain .btn is a secondary button - a
+   raised fill with a faint ring; primary is solid teal, danger is a tint. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -486,46 +499,41 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   padding: 4px 16px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: var(--ring-soft);
+  color: var(--ink);
   font-family: inherit;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
 }
+.btn:not(:disabled):hover { background: var(--surface-track); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn:focus-visible,
-.icon-btn:focus-visible,
-.menu-item:focus-visible,
-.app-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Run is the primary action; Kill is destructive */
-.btn-run { background: var(--accent); color: var(--on-accent); }
-.btn-run:not(:disabled):hover { filter: brightness(1.08); }
-.btn-kill { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
-.btn-kill:not(:disabled):hover { background: var(--danger); color: var(--surface); }
+.btn-run { background: var(--accent); box-shadow: none; color: var(--on-accent); }
+.btn-run:not(:disabled):hover { background: var(--accent); filter: brightness(1.08); }
+.btn-kill { background: var(--danger-soft); box-shadow: none; color: var(--danger); }
+.btn-kill:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
 
-.btn-ghost {
-  background: transparent;
-  border-color: var(--border-control);
-  color: var(--ink);
-}
-.btn-ghost:hover { border-color: var(--accent); }
-.btn-ghost.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+/* .btn-ghost is Rack's bordered secondary button (Edit, Update, Cancel) */
+.btn-ghost { color: var(--ink); }
+.btn-ghost.on { background: var(--accent-soft); box-shadow: none; color: var(--accent-text); }
 
 .btn-link {
   text-decoration: none;
-  background: var(--accent-soft);
   color: var(--accent-text);
   padding: 4px 12px;
 }
 
 .btn-danger-ghost {
-  background: transparent;
-  border-color: var(--border-control);
+  background: var(--danger-soft);
+  box-shadow: none;
   color: var(--danger);
   margin-top: 12px;
   align-self: flex-start;
 }
-.btn-danger-ghost:hover { border-color: var(--danger); background: var(--danger-soft); }
+.btn-danger-ghost:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
 
 /* ============================= panel ============================= */
 .empty-hint {
@@ -643,7 +651,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   font-size: 0.78rem;
 }
 .upd-note .muted { color: inherit; opacity: 0.8; }
-.btn.has-update { border-color: var(--accent); color: var(--accent-text); }
+.btn.has-update { background: var(--accent-soft); box-shadow: none; color: var(--accent-text); }
 
 .setup-note code {
   background: var(--surface-track);
@@ -836,13 +844,14 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   font-family: inherit;
   font-size: 0.72rem;
   padding: 2px 8px;
-  border: 1px solid var(--border-control);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: transparent;
+  background: var(--surface-raised);
+  box-shadow: var(--ring-soft);
   color: var(--ink-muted);
   cursor: pointer;
 }
-.term-clear:hover { border-color: var(--accent); color: var(--accent-text); }
+.term-clear:hover { background: var(--surface-track); color: var(--ink); }
 .term {
   flex: 1;
   margin: 0;
@@ -902,7 +911,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   font-size: 0.9rem;
 }
 .modal input[type="checkbox"] { min-height: 0; accent-color: var(--accent); }
-.modal input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+.modal input:focus { border-color: var(--accent); }
 .modal-error {
   margin: 0;
   color: var(--danger);
@@ -979,7 +988,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   cursor: pointer;
 }
 .mode-tab:hover { color: var(--ink); }
-.mode-tab.on { background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow); }
+.mode-tab.on { background: var(--accent); color: var(--on-accent); }
 
 #pane-github,
 #pane-local {
@@ -1215,13 +1224,13 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   touch-action: pan-y;
   cursor: crosshair;
 }
-/* chart series take accent, then accent-2, then accent-3 */
+/* chart series alternate teal and periwinkle */
 .stat-chart,
 .ov-cpu { --series: var(--accent); }
 #sys-mem,
 #tile-mem,
 .ov-mem { --series: var(--accent-2); }
-#sys-disk { --series: var(--accent-3); }
+#sys-disk { --series: var(--accent); }
 .stat[data-level="warn"],
 .meter-fill[data-level="warn"] { --series: var(--warning); }
 .stat[data-level="crit"],
@@ -1261,15 +1270,18 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .ov-sort { display: flex; align-items: center; gap: 4px; font-size: 0.78rem; color: var(--ink-muted); }
 .ov-sort button {
   min-height: var(--control-h);
-  border: 1px solid var(--border-control);
-  background: transparent;
+  border: 1px solid transparent;
+  background: var(--surface-raised);
+  box-shadow: var(--ring-soft);
   color: var(--ink-muted);
   border-radius: var(--radius-pill);
   padding: 2px 12px;
   font: inherit;
   cursor: pointer;
 }
-.ov-sort button.on { border-color: var(--accent); color: var(--on-accent); background: var(--accent); }
+.ov-sort button:hover { background: var(--surface-track); color: var(--ink); }
+.ov-sort button.on { color: var(--on-accent); background: var(--accent); box-shadow: none; }
+
 .ov-rows { display: flex; flex-direction: column; }
 .ov-row {
   display: grid;
@@ -1402,3 +1414,6 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 #mcp-cli { white-space: normal; word-break: break-all; }
 #mcp-cli.copied { border-color: var(--success); color: var(--success); }
+
+/* One focus ring everywhere, keyboard or not: 2px of teal text colour, 2px out. */
+:focus-visible { outline: 2px solid var(--accent-text) !important; outline-offset: 2px !important; }
