@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.13.3
+- **New look: the Rack Suite "Twilight" palette**, replacing Sunset. Dark
+  graphite with a faint periwinkle tint, teal for the things you act on — Run,
+  the selected app (with a teal stripe down its left edge), switches, focus
+  and the CPU/disk meters — and periwinkle for the memory charts. Buttons are
+  soft now: a raised fill with a faint ring instead of a hard outline, Run in
+  solid teal and Kill / Remove app as a red tint. Every control shows the same
+  teal focus ring. Light theme is still under ⚙ → Theme.
+
 ## v0.13.2
 - **New look: the Rack Suite "Sunset" palette.** Dark is the main theme and
   light is still one click away (⚙ → Theme). Periwinkle is the one action
