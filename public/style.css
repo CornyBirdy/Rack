@@ -194,6 +194,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .menu-item:hover { background: var(--accent-soft); }
 .menu-item.on { color: var(--accent-text); }
 .menu-item.alert { color: var(--accent-text); font-weight: 600; }
+.menu-item .upd-icon { font-weight: inherit; }
 .settings-version {
   display: block;
   width: 100%;

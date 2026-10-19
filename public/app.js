@@ -33,6 +33,8 @@ const settingsMenu = $("settings-menu");
 $("btn-settings").onclick = (e) => {
   e.stopPropagation();
   settingsMenu.hidden = !settingsMenu.hidden;
+  // The menu says whether there's an update, so make sure that's fresh.
+  if (!settingsMenu.hidden && !updates.checking && Date.now() - (updates.checkedAt || 0) > STALE_CHECK_MS) checkNow();
 };
 document.addEventListener("click", (e) => {
   if (!settingsMenu.hidden && !e.target.closest(".sidebar-header")) settingsMenu.hidden = true;
@@ -144,11 +146,9 @@ loadBoot();
 
 async function loadVersion() {
   try {
-    const { version, supervised } = await fetch("/api/version").then((r) => r.json());
+    const { version } = await fetch("/api/version").then((r) => r.json());
     const v = document.querySelector(".settings-version");
     if (v) v.textContent = `Rack v${version}`;
-    // one-click update only works under the start.bat supervisor loop
-    $("btn-update-rack").hidden = !supervised;
   } catch {}
 }
 loadVersion();
@@ -191,40 +191,50 @@ function updateTitle(info, what) {
   return lines.join("\n");
 }
 
+// One menu item that just says where things stand. It's the Update Rack button
+// when Rack has something new, and otherwise a status line — there's nothing to
+// press to check, Rack keeps the answer fresh itself.
 function renderUpdateMenu() {
-  const label = $("btn-check-updates").querySelector("span");
+  const btn = $("btn-update-rack");
   const behindApps = updates.apps.filter((a) => hasUpdate(a));
   const rackBehind = hasUpdate(updates.rack);
-  if (updates.checking) {
-    label.textContent = "Checking for updates…";
+  const apps = `${behindApps.length} app${behindApps.length === 1 ? " has" : "s have"} updates`;
+  const rack = updates.rack || {};
+  let icon = "✓";
+  let text;
+  if (updates.checking && !rackBehind) {
+    icon = "⟲";
+    text = "Checking for updates…";
   } else if (!updates.checkedAt) {
-    label.textContent = "Check for updates";
-  } else if (rackBehind || behindApps.length) {
-    const bits = [];
-    if (rackBehind) bits.push("Rack");
-    if (behindApps.length) bits.push(`${behindApps.length} app${behindApps.length === 1 ? "" : "s"}`);
-    label.textContent = `Update available: ${bits.join(" + ")}`;
+    icon = "⟲";
+    text = "Not checked yet";
+  } else if (rackBehind) {
+    icon = "⟳";
+    text = `Update Rack — ${rack.behind} new` + (behindApps.length ? ` · ${apps}` : "");
+  } else if (behindApps.length) {
+    icon = "⟳";
+    text = `Rack is up to date · ${apps}`;
+  } else if (rack.error || rack.reason) {
+    icon = "⚠";
+    text = "Couldn't check for updates";
   } else {
-    label.textContent = `Up to date · checked ${fmtAgo(updates.checkedAt)}`;
+    text = "Everything is up to date";
   }
-  $("btn-check-updates").classList.toggle("alert", !updates.checking && (rackBehind || behindApps.length > 0));
-  $("btn-check-updates").title = [
+  btn.querySelector(".upd-icon").textContent = icon;
+  btn.querySelector("span").textContent = text;
+  btn.classList.toggle("alert", rackBehind || behindApps.length > 0);
+  btn.classList.toggle("on", icon === "✓");
+  btn.title = [
     updateTitle(updates.rack, "Rack"),
-    // without the supervisor there's no ⟳ Update Rack button to press
-    rackBehind && updates.rack.supervised === false
+    // without the supervisor there's no one-click update to run
+    rackBehind && rack.supervised === false
       ? "Start Rack from start.bat to update it from here — otherwise: git pull in Rack's folder."
       : "",
     ...behindApps.map((a) => updateTitle(a, a.name)),
+    updates.checkedAt ? `Checked ${fmtAgo(updates.checkedAt)}.` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
-
-  const rackBtn = $("btn-update-rack").querySelector("span");
-  rackBtn.textContent = rackBehind
-    ? `Update Rack — ${updates.rack.behind} new`
-    : "Update Rack";
-  $("btn-update-rack").classList.toggle("alert", rackBehind);
-  $("btn-update-rack").title = updateTitle(updates.rack, "Rack");
 }
 
 function renderUpdates() {
@@ -240,7 +250,9 @@ async function loadUpdates() {
   renderUpdates();
 }
 
-$("btn-check-updates").onclick = async () => {
+// Opening the ⚙ menu on an answer older than this asks the remotes again.
+const STALE_CHECK_MS = 5 * 60 * 1000;
+async function checkNow() {
   updates.checking = true;
   renderUpdateMenu();
   try {
@@ -249,7 +261,7 @@ $("btn-check-updates").onclick = async () => {
     updates.checking = false;
   }
   renderUpdates();
-};
+}
 
 /* ------------------------------------------------------------- sdk prompt */
 
@@ -393,6 +405,12 @@ function pollBackAndReload() {
 }
 
 $("btn-update-rack").onclick = async () => {
+  // Only an update for Rack itself has anything to run; otherwise the item is
+  // just a status line (app updates live on each app's ⟳ Update).
+  if (updates.checking || !hasUpdate(updates.rack)) {
+    if (!updates.checking && (updates.rack?.error || !updates.checkedAt)) checkNow(); // retry a failed check
+    return;
+  }
   $("settings-menu").hidden = true;
   $("update-title").textContent = "Update Rack";
   $("update-sub").textContent = "Checking for updates…";
@@ -1001,7 +1019,7 @@ function updateNote(app) {
   if (updates.checking) {
     line.textContent = "⟲ Checking for updates…";
   } else if (!info || (!info.repo && !info.reason && !info.error)) {
-    line.textContent = "⟲ Not checked yet — ⚙ Check for updates.";
+    line.textContent = "⟲ Not checked yet.";
   } else if (!info.repo) {
     line.textContent = `⟲ Can't check automatically (${info.reason || info.error}) — press ⟳ Update to find out.`;
   } else if (info.behind > 0) {
