@@ -11,7 +11,7 @@ const os = require("os");
 const { spawn, exec, execFile, execSync } = require("child_process");
 const hosted = require("./lib/hosted");
 
-const VERSION = "0.13.0";
+const VERSION = "0.13.1";
 // True when launched by the start.bat supervisor loop, which can relaunch us on
 // exit code 42 — that's what makes one-click "Update Rack" able to restart.
 const SUPERVISED = process.env.RACK_SUPERVISOR === "1" || process.argv.includes("--supervised");
@@ -541,26 +541,28 @@ function gitAsync(dir, args, timeout = 45000) {
   });
 }
 const gitHeadIn = (dir) => gitSync(dir, ["rev-parse", "HEAD"]);
-const isGitRepo = (dir) => gitSync(dir, ["rev-parse", "--is-inside-work-tree"]) === "true";
 
 // Ask the remote whether there's anything new, without changing the checkout.
 // Returns { repo, behind, ahead, commits, ... } — `behind` is what "an update is
 // available" means: commits on the upstream branch we don't have yet.
 async function checkGit(dir) {
   if (!dir || !fs.existsSync(dir)) return { repo: false, reason: "folder not found" };
-  if (!isGitRepo(dir)) return { repo: false, reason: "not a git checkout" };
+  const inside = await gitAsync(dir, ["rev-parse", "--is-inside-work-tree"]);
+  if (inside.out !== "true") return { repo: false, reason: "not a git checkout" };
 
-  const fetched = await gitAsync(dir, ["fetch", "--quiet"]);
   const upstream = await gitAsync(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
-  if (!upstream.ok) {
-    return { repo: true, error: "this branch isn't tracking a remote branch", head: gitHeadIn(dir).slice(0, 7) };
-  }
+  const head = (await gitAsync(dir, ["rev-parse", "--short=7", "HEAD"])).out;
+  if (!upstream.ok) return { repo: true, error: "this branch isn't tracking a remote branch", head };
+
+  // Only what the comparison needs: no tags, and no auto-gc / maintenance pass
+  // tacked onto the end of the fetch (that's what made some checks crawl).
+  const fetched = await gitAsync(dir, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fetch", "--quiet", "--no-tags"]);
   const count = await gitAsync(dir, ["rev-list", "--left-right", "--count", "HEAD...@{u}"]);
   const [ahead, behind] = count.ok ? count.out.split(/\s+/).map(Number) : [0, 0];
   const log = behind ? await gitAsync(dir, ["log", "--pretty=%h %s", "-5", "HEAD..@{u}"]) : null;
   return {
     repo: true,
-    head: gitHeadIn(dir).slice(0, 7),
+    head,
     upstream: upstream.out,
     ahead: ahead || 0,
     behind: behind || 0,
@@ -574,34 +576,49 @@ const firstLine = (s) => String(s || "").split(/\r?\n/).filter(Boolean)[0] || ""
 /* --------------------------------------------------- "check for updates" */
 
 // Cached answer to "is there anything new?", for Rack itself and every app that
-// has an update command. Refreshed on demand (⟲ Check for updates), a while
-// after boot, every few hours, and after an update runs.
-const AUTO_CHECK_MS = 6 * 60 * 60 * 1000;
+// has an update command. Refreshed a while after boot, every half hour, when
+// the ⚙ menu is opened on a stale answer, and after an update runs.
+const AUTO_CHECK_MS = 30 * 60 * 1000;
 let updateStatus = { checking: false, checkedAt: 0, rack: null, apps: {} };
 let checkTimer = null;
+let checkRun = null;
 
 function updateStatusFor(app) {
   return updateStatus.apps[app.id] || null;
 }
 
-async function checkUpdates() {
-  if (updateStatus.checking) return updateStatus;
+// Every repo is asked at once, so a check takes as long as the slowest remote
+// rather than all of them added up. Apps sharing a folder (or living in Rack's)
+// share one fetch — two at once in the same repo would fight over its lock.
+// A second caller mid-check waits for the running one instead of getting the
+// old answer.
+function checkUpdates() {
+  if (checkRun) return checkRun;
   updateStatus.checking = true;
   broadcast({ type: "updates" });
-  try {
-    updateStatus.rack = await checkGit(ROOT);
-    const found = {};
-    for (const a of apps) {
-      // Nothing to apply without an update command, so nothing worth reporting.
-      found[a.id] = a.update ? await checkGit(appDir(a)) : { repo: false, reason: "no update command" };
+  checkRun = (async () => {
+    try {
+      const byDir = new Map();
+      const check = (dir) => {
+        if (!byDir.has(dir)) byDir.set(dir, checkGit(dir));
+        return byDir.get(dir);
+      };
+      const [rack, ...found] = await Promise.all([
+        check(ROOT),
+        // Nothing to apply without an update command, so nothing worth reporting.
+        ...apps.map((a) => (a.update ? check(appDir(a)) : { repo: false, reason: "no update command" })),
+      ]);
+      updateStatus.rack = rack;
+      updateStatus.apps = Object.fromEntries(apps.map((a, i) => [a.id, found[i]]));
+      updateStatus.checkedAt = Date.now();
+    } finally {
+      updateStatus.checking = false;
+      checkRun = null;
+      broadcast({ type: "updates" });
     }
-    updateStatus.apps = found;
-    updateStatus.checkedAt = Date.now();
-  } finally {
-    updateStatus.checking = false;
-    broadcast({ type: "updates" });
-  }
-  return updateStatus;
+    return updateStatus;
+  })();
+  return checkRun;
 }
 
 // Re-check shortly after something changed the picture (an update ran, an app
@@ -2871,7 +2888,7 @@ server.listen(CONTROL_PORT, async () => {
       }
     }
   } catch {}
-  // Look for updates once the dashboard has settled, then a few times a day.
+  // Look for updates once the dashboard has settled, then every half hour.
   checkUpdatesSoon(20000);
   setInterval(() => checkUpdates().catch(() => {}), AUTO_CHECK_MS).unref();
   sampleStats().catch(() => {});
