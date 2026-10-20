@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.13.5
+- **The Rack Suite design system.** Rack, MC Hoster and Shelf now share one
+  set of blue/grey neutrals, shapes and soft buttons; each app has its own
+  accent, and Rack's is coral (Run, the selected app, switches, focus and the
+  CPU/disk meters). Memory charts are blue. Success, warning, danger and info
+  are the same colours in every app. Secondary buttons have a hairline
+  border. Dark and light both follow the new palette, as does the Claude
+  connector's sign-in page.
+
 ## v0.13.4
 - **Twilight, refined.** Dark is deeper and less pastel: richer teal for what
   you act on, and clearer green, amber, red and blue for statuses. Light is
