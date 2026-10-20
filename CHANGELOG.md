@@ -8,6 +8,8 @@
   are the same colours in every app. Secondary buttons have a hairline
   border. Dark and light both follow the new palette, as does the Claude
   connector's sign-in page.
+- **A new icon:** a duotone coral rack of three units on the suite's dark
+  tile, in the tab, the installed app and the top of the sidebar.
 
 ## v0.13.4
 - **Twilight, refined.** Dark is deeper and less pastel: richer teal for what
