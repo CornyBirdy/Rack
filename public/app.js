@@ -2,6 +2,47 @@
 
 const $ = (id) => document.getElementById(id);
 
+/* ------------------------------------------------------------- motion */
+// Short entrances and exits (see "motion" in style.css), unless the device
+// asks for less motion.
+const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Restarts the entrance animation `cls` on node.
+function playIn(node, cls = "page-in") {
+  if (!node || lessMotion()) return;
+  clearTimeout(node.playTimer);
+  node.classList.remove(cls);
+  void node.offsetWidth; // so re-adding the class starts the animation over
+  node.classList.add(cls);
+  node.playTimer = setTimeout(() => node.classList.remove(cls), 400);
+}
+
+// Dialogs and the settings menu fade out instead of vanishing: hiding one
+// plays its closing animation first. They read as hidden from the moment
+// they start to close, so a second click opens them again.
+const hiddenProp = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidden");
+for (const n of document.querySelectorAll(".modal-backdrop, .settings-menu")) {
+  Object.defineProperty(n, "hidden", {
+    configurable: true,
+    get() { return this.classList.contains("closing") || hiddenProp.get.call(this); },
+    set(v) {
+      clearTimeout(this.closeTimer);
+      const closing = this.classList.contains("closing");
+      this.classList.remove("closing");
+      if (!v || hiddenProp.get.call(this) || lessMotion()) {
+        // Opened again mid-close: start its entrance over.
+        if (!v && closing) { hiddenProp.set.call(this, true); void this.offsetWidth; }
+        return hiddenProp.set.call(this, v);
+      }
+      this.classList.add("closing");
+      this.closeTimer = setTimeout(() => {
+        this.classList.remove("closing");
+        hiddenProp.set.call(this, true);
+      }, 140);
+    },
+  });
+}
+
 let appsList = [];
 let conflictsList = [];
 // null = the Overview page. Remembered per browser, so a phone reopens where it was.
@@ -744,6 +785,7 @@ $("filter-clear").onclick = () => {
 };
 
 function selectApp(id) {
+  const changed = (id || null) !== selectedId;
   selectedId = id || null;
   try {
     if (selectedId) localStorage.setItem("selected", selectedId);
@@ -755,6 +797,7 @@ function selectApp(id) {
   renderStats();
   loadLogs();
   showMain(true);
+  if (changed) playIn(selectedId ? $("panel") : $("overview"));
 }
 $("overview-btn").onclick = () => selectApp(null);
 
