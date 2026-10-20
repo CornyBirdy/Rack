@@ -4,7 +4,7 @@
   "description": "Run and watch your apps from one place",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#22242b",
-  "theme_color": "#282a31",
+  "background_color": "#1b1d23",
+  "theme_color": "#202228",
   "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
 }

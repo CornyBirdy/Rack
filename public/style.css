@@ -1,32 +1,32 @@
 /* ============================= theme tokens =============================
-   Rack Suite "Twilight" palette. Dark is the primary theme; light is the
+   Rack Suite "Twilight" palette (v2: deeper, less pastel dark; a calmer light). Dark is the primary theme; light is the
    secondary one. Every colour in this file comes from these tokens. */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --ground: #22242b;
-  --surface-sunken: #282a31;
-  --surface: #2e3038;
-  --surface-raised: #373941;
-  --surface-track: #44464e;
-  --hairline: #40424a;
-  --border-control: #9a9eab;
-  --ink: #e6e7ed;
-  --ink-muted: #bbbdc7;
-  --accent: #61c7c7;
-  --on-accent: #031a1a;
-  --accent-text: #75d3d3;
-  --accent-soft: rgba(97, 199, 199, 0.14);
-  --accent-2: #9ba7e1;
-  --accent-3: #d7a583;
-  --success: #80cdb0;
-  --success-soft: rgba(128, 205, 176, 0.14);
-  --warning: #e0bb6e;
-  --warning-soft: rgba(224, 187, 110, 0.14);
-  --danger: #f4a6af;
-  --danger-soft: rgba(244, 166, 175, 0.14);
-  --info: #95b9e6;
-  --info-soft: rgba(149, 185, 230, 0.14);
+  --ground: #1b1d23;
+  --surface-sunken: #202228;
+  --surface: #262830;
+  --surface-raised: #2f323b;
+  --surface-track: #3b3e48;
+  --hairline: #363943;
+  --border-control: #8b90a0;
+  --ink: #eceef4;
+  --ink-muted: #a9adbb;
+  --accent: #1fb8b1;
+  --on-accent: #001c1b;
+  --accent-text: #3fd0c8;
+  --accent-soft: rgba(31, 184, 177, 0.16);
+  --accent-2: #7d8cf5;
+  --accent-3: #f0915a;
+  --success: #34c48b;
+  --success-soft: rgba(52, 196, 139, 0.15);
+  --warning: #f2b33d;
+  --warning-soft: rgba(242, 179, 61, 0.15);
+  --danger: #f25f73;
+  --danger-soft: rgba(242, 95, 115, 0.15);
+  --info: #4fa3f7;
+  --info-soft: rgba(79, 163, 247, 0.15);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-overlay: 0 12px 32px -16px rgba(0, 0, 0, 0.8);
   --scrim: rgba(0, 0, 0, 0.55);
@@ -34,32 +34,32 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --ground: #eef0f7;
-  --surface-sunken: #e7e9f0;
-  --surface: #f9fafe;
-  --surface-raised: #eceef5;
-  --surface-track: #dcdee5;
-  --hairline: #d9dae1;
-  --border-control: #777a87;
-  --ink: #232630;
-  --ink-muted: #545764;
-  --accent: #6bcac9;
-  --on-accent: #031a1a;
-  --accent-text: #006768;
-  --accent-soft: rgba(107, 202, 201, 0.16);
-  --accent-2: #5c69bc;
-  --accent-3: #9f6d4b;
-  --success: #1f6f54;
-  --success-soft: rgba(31, 111, 84, 0.1);
-  --warning: #7a5a14;
-  --warning-soft: rgba(122, 90, 20, 0.1);
-  --danger: #a83a4d;
-  --danger-soft: rgba(168, 58, 77, 0.1);
-  --info: #2f5f9c;
-  --info-soft: rgba(47, 95, 156, 0.1);
-  --shadow: 0 1px 2px rgba(20, 24, 28, 0.12), 0 1px 3px rgba(20, 24, 28, 0.08);
-  --shadow-overlay: 0 12px 32px -12px rgba(20, 24, 28, 0.28);
-  --scrim: rgba(35, 38, 48, 0.4);
+  --ground: #e6e8ee;
+  --surface-sunken: #dfe2e9;
+  --surface: #f0f1f5;
+  --surface-raised: #e8eaf0;
+  --surface-track: #d4d7df;
+  --hairline: #d2d5dd;
+  --border-control: #8d919e;
+  --ink: #2c2f38;
+  --ink-muted: #626674;
+  --accent: #22a9a3;
+  --on-accent: #002321;
+  --accent-text: #0b726d;
+  --accent-soft: rgba(34, 169, 163, 0.15);
+  --accent-2: #5160cc;
+  --accent-3: #b5652f;
+  --success: #1d7f5c;
+  --success-soft: rgba(29, 127, 92, 0.11);
+  --warning: #8c6510;
+  --warning-soft: rgba(140, 101, 16, 0.11);
+  --danger: #c0435a;
+  --danger-soft: rgba(192, 67, 90, 0.11);
+  --info: #2f6fbf;
+  --info-soft: rgba(47, 111, 191, 0.11);
+  --shadow: 0 1px 2px rgba(30, 34, 44, 0.08), 0 1px 3px rgba(30, 34, 44, 0.06);
+  --shadow-overlay: 0 12px 32px -12px rgba(30, 34, 44, 0.22);
+  --scrim: rgba(44, 47, 56, 0.35);
 }
 
 :root {
@@ -271,7 +271,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   font-family: var(--font-mono);
   font-size: 0.85em;
 }
-.logo { color: var(--accent-text); font-size: 1.3rem; }
+/* the suite mark: the same tile as the app icon */
+.logo { display: block; width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; box-shadow: var(--ring-soft); }
 
 /* filter box */
 .app-filter {
@@ -1417,3 +1418,47 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 
 /* One focus ring everywhere, keyboard or not: 2px of teal text colour, 2px out. */
 :focus-visible { outline: 2px solid var(--accent-text) !important; outline-offset: 2px !important; }
+
+/* ================================================================ motion
+   The same vocabulary as Shelf: short entrances as something new comes into
+   view (an app's page, the overview, a dialog, the settings menu), dialogs
+   and the menu fading out as they close (see "motion" in app.js), and eased
+   hovers and presses. Nothing moves for long, and nothing at all when the
+   device asks for less motion. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes slide-in { from { opacity: 0; transform: translateX(calc(var(--in-dir, 1) * 24px)); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.97) translateY(6px); } }
+@keyframes pop-out { to { opacity: 0; transform: scale(0.97); } }
+@keyframes sheet-up { from { opacity: 0; transform: translateY(40%); } }
+@keyframes sheet-down { to { opacity: 0; transform: translateY(30%); } }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.97); } }
+@keyframes menu-out { to { opacity: 0; transform: translateY(-4px) scale(0.97); } }
+
+.panel.page-in { animation: rise-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.modal-backdrop:not([hidden]) { animation: fade-in 0.16s ease-out; }
+.modal-backdrop:not([hidden]) > .modal { animation: pop 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.modal-backdrop.closing { animation: fade-out 0.14s ease-in forwards; pointer-events: none; }
+.modal-backdrop.closing > .modal { animation: pop-out 0.14s ease-in forwards; }
+.settings-menu:not([hidden]) { animation: menu-in 0.14s ease-out; transform-origin: top right; }
+.settings-menu.closing { animation: menu-out 0.12s ease-in forwards; pointer-events: none; }
+
+.btn, .icon-btn, .menu-item, .app-item, .overview-item, .ov-row, .card, .exp-card {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.18s ease, filter 0.15s ease, transform 0.12s ease;
+}
+.btn:not(:disabled):active, .icon-btn:active, .menu-item:active, .app-item:active { transform: scale(0.98); }
+.app-item.selected { transition: background-color 0.2s ease, box-shadow 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@media (max-width: 760px) {
+  /* the list and an app are two pages here: the app comes in from the side */
+  body.m-main .main { animation: slide-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  body:not(.m-main) .sidebar { animation: slide-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); --in-dir: -1; }
+  .modal-backdrop:not([hidden]) > .modal { animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .modal-backdrop.closing > .modal { animation: sheet-down 0.14s ease-in forwards; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

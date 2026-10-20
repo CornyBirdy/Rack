@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.13.4
+- **Twilight, refined.** Dark is deeper and less pastel: richer teal for what
+  you act on, and clearer green, amber, red and blue for statuses. Light is
+  calmer: softer whites and slightly softer text, so it no longer glares.
+- **A new icon** in the Rack Suite style shared with MC Hoster, Shelf and
+  Cascade: a teal mark on a dark rounded tile, also at the top of the sidebar.
+- **Smoother.** Picking an app or the overview brings its page in, dialogs
+  and the ⚙ menu fade in and out instead of popping, and buttons and list
+  rows ease on hover and press. On a phone an app slides in from the side and
+  dialogs rise from the bottom. Nothing moves if your device asks for less
+  motion.
+
 ## v0.13.3
 - **New look: the Rack Suite "Twilight" palette**, replacing Sunset. Dark
   graphite with a faint periwinkle tint, teal for the things you act on — Run,
