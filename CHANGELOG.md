@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **⟳ Update runs an app's setup for you.** If the app's `rack.json` has a
+  `setup` step, it now runs after an update that brings new code (before the
+  rebuild), so there's no running `setup.bat` by hand after code changes. If
+  setup fails the app stays stopped instead of running half-installed code.
 - **Unfolded phones and tablets:** the page is sized to the visible screen, so
   **+ Add app** (and the bottom of the app list) is no longer hidden behind the
   browser's address bar.

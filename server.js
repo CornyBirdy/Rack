@@ -646,7 +646,7 @@ function updatesPayload() {
 
 // Run an app's update sequence and stream the output to the UI via SSE:
 //
-//   update command → (only if it actually brought new code) rebuild → restart
+//   update command → (only if it actually brought new code) setup → rebuild → restart
 //
 // The app keeps running through the update command — it's only stopped once
 // there's something to build or restart, so a "nothing to pull" update leaves a
@@ -725,10 +725,12 @@ function updateApp(app) {
     });
   };
 
-  // New code is in the folder: build it if there's a build step, then make sure
+  // New code is in the folder: run the app's one-time setup (when its rack.json
+  // has one — new code may need new dependencies) and build step, then make sure
   // the app is actually running the new code rather than the old one.
-  const applyNewCode = (changed) => {
-    if (!rebuild) {
+  const applyNewCode = (changed, withSetup) => {
+    const setup = withSetup ? (app.setup || "").trim() : "";
+    if (!rebuild && !setup) {
       if (!wasRunning) return done(0, changed, false);
       emit("out", "[update] new code — restarting the app so it picks it up");
       stopApp(app);
@@ -740,15 +742,26 @@ function updateApp(app) {
     }
     waitStopped(app, (gone) => {
       if (!gone) {
-        emit("err", "[update] the app hasn't stopped — skipping the rebuild.");
+        emit("err", `[update] the app hasn't stopped — skipping the ${setup ? "setup" : "rebuild"}.`);
         return done(1, changed, false);
       }
-      runStep("rebuild", rebuild.cmd, rebuild.label, (code) => {
+      const build = () => {
+        if (!rebuild) return restart(0, changed);
+        runStep("rebuild", rebuild.cmd, rebuild.label, (code) => {
+          if (code !== 0) {
+            emit("err", "[rebuild] failed — the app stays stopped, so you never run half-built code.");
+            return done(code, changed, false);
+          }
+          restart(0, changed);
+        });
+      };
+      if (!setup) return build();
+      runStep("setup", setup, setup, (code) => {
         if (code !== 0) {
-          emit("err", "[rebuild] failed — the app stays stopped, so you never run half-built code.");
+          emit("err", "[setup] failed — the app stays stopped, so you never run half-installed code. Fix it, then press Run.");
           return done(code, changed, false);
         }
-        restart(0, changed);
+        build();
       });
     });
   };
@@ -774,7 +787,7 @@ function updateApp(app) {
       return done(0, false, false);
     }
     if (headBefore) emit("out", `[update] new code: ${headBefore.slice(0, 7)} → ${gitHeadIn(dir).slice(0, 7)}`);
-    applyNewCode(true);
+    applyNewCode(true, true);
   });
   return { ok: true };
 }

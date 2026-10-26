@@ -1097,7 +1097,7 @@ function renderDetails(app) {
     const note = document.createElement("div");
     note.className = "setup-note";
     note.innerHTML =
-      `⚙ One-time setup: <code></code> <span class="muted">— run it once by hand, and after code changes.</span>`;
+      `⚙ One-time setup: <code></code> <span class="muted">— Rack runs it when you install, and on every ⟳ Update that brings new code.</span>`;
     note.querySelector("code").textContent = app.setup;
     wrap.appendChild(note);
   }
