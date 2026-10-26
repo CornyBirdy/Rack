@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **Switching on an app's autostart (or renaming it) no longer stops it.** Saving
+  the Edit dialog restarted a running app every time; it now only stops one
+  when its processes were actually changed.
 - **Press "Everything is up to date" to check again.** The ⚙ menu's update line
   now re-checks for updates when pressed, instead of only after a failed check.
 - **+ Add app stays in reach on a phone.** It's pinned to the bottom of the
