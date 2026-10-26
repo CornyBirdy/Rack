@@ -15,7 +15,7 @@ standalone launchers working.
   backend and a frontend, that's two separate processes, not one script.
 - One-time work (installing deps, downloading binaries, building, migrating,
   seeding) must **not** live in the run path. Put it in a separate `setup.bat`
-  (or `setup.sh`) the user runs by hand once. Run scripts should only start a
+  (or `setup.sh`) that Rack runs for the user. Run scripts should only start a
   server, instantly and repeatably.
 - If the project has a **build step** (anything that must be recompiled after the
   source changes — `npm run build`, `go build`, `dotnet publish`, …), put exactly
@@ -84,7 +84,7 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
 | `name` | app | Display name. |
 | `category` | app | Optional sidebar group. |
 | `autostart` | app | `true` = start when Rack launches (e.g. on boot). |
-| `setup` | app | One-time command, shown as a hint. Not run as a process. |
+| `setup` | app | One-time command. Rack runs it on install and on every ⟳ Update that brings new code (it's not a process). |
 | `update` | app | Optional command (e.g. `git pull`) shown as a ⟳ Update button. |
 | `rebuild` | app | Build command run right after `update`. Omit it and Rack runs `rebuild.bat` from the project root if one exists; `false` disables that. |
 | `processes[]` | app | One entry per long-running server. |
@@ -115,8 +115,9 @@ pocketbase\pocketbase.exe serve --http=127.0.0.1:%PB_PORT% --dir pocketbase\pb_d
    what you found before changing anything.
 2. Create one foreground-safe launcher script per server: no `start`, no
    `pause`, no browser-open; read the port from its env var with a default.
-3. Create `setup.bat` for the one-time work. `pause` is fine there since it's run
-   by hand; exit non-zero on failure.
+3. Create `setup.bat` for the one-time work. Rack runs it unattended (no stdin,
+   10 minute cap), on install and again after every update that brings new code,
+   so keep it non-interactive, safe to re-run, and exit non-zero on failure.
 4. If the project has a build step, create `rebuild.bat` containing only that
    build (no `pause`, exits non-zero on failure), and have `setup.bat` call it
    rather than duplicating the build.

@@ -292,6 +292,10 @@ can't overwrite files a running server holds open, so Rack stops the app first,
 waits for its processes to actually exit, builds, then starts it again — one
 click is pull → build → back up.
 
+If the app's `rack.json` names a **`setup`** step (say `setup.bat` to install
+dependencies), Rack runs that too on an update that brought new code, before the
+build — so after a code change there's nothing to run by hand.
+
 The update command itself runs with the app still up, so a **failed update
 leaves the app exactly as it was**, still running. A failed *build* leaves the
 app stopped, so you never run half-built code.
