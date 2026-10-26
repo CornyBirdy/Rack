@@ -233,8 +233,8 @@ function updateTitle(info, what) {
 }
 
 // One menu item that just says where things stand. It's the Update Rack button
-// when Rack has something new, and otherwise a status line — there's nothing to
-// press to check, Rack keeps the answer fresh itself.
+// when Rack has something new, and otherwise a status line — Rack keeps the
+// answer fresh itself, and pressing the line checks again right away.
 function renderUpdateMenu() {
   const btn = $("btn-update-rack");
   const behindApps = updates.apps.filter((a) => hasUpdate(a));
@@ -449,7 +449,7 @@ $("btn-update-rack").onclick = async () => {
   // Only an update for Rack itself has anything to run; otherwise the item is
   // just a status line (app updates live on each app's ⟳ Update).
   if (updates.checking || !hasUpdate(updates.rack)) {
-    if (!updates.checking && (updates.rack?.error || !updates.checkedAt)) checkNow(); // retry a failed check
+    if (!updates.checking) checkNow(); // pressing the status line asks the remotes again
     return;
   }
   $("settings-menu").hidden = true;

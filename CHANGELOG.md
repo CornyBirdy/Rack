@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- **Press "Everything is up to date" to check again.** The ⚙ menu's update line
+  now re-checks for updates when pressed, instead of only after a failed check.
 - **+ Add app stays in reach on a phone.** It's pinned to the bottom of the
   app list instead of sitting below the last app, so it no longer scrolls off
   screen once you have a few apps.
