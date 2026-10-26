@@ -109,12 +109,14 @@ body {
   background: var(--ground);
   color: var(--ink);
   height: 100vh;
+  height: 100dvh; /* 100vh ignores a phone's address bar and hides the bottom of the page */
   overflow: hidden;
 }
 
 .layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
 }
 
 h1, h2, h3 { margin: 0; font-weight: 600; }

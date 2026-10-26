@@ -291,8 +291,9 @@ async function loadUpdates() {
   renderUpdates();
 }
 
-// Opening the ⚙ menu on an answer older than this asks the remotes again.
-const STALE_CHECK_MS = 5 * 60 * 1000;
+// Opening the ⚙ menu on an answer older than this asks the remotes again (a
+// longer wait hid an update that landed just after the last check).
+const STALE_CHECK_MS = 15 * 1000;
 async function checkNow() {
   updates.checking = true;
   renderUpdateMenu();
