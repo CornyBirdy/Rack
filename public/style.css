@@ -1342,7 +1342,14 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
   .app-item .usage { font-size: 0.8rem; }
   .cat-header { padding: 8px 8px 8px; }
   .app-filter input { padding: 8px 0; font-size: 1rem; }
-  .add-app-btn { padding: 12px; }
+  /* pinned to the bottom of the screen so it never scrolls off a long app list */
+  .add-app-btn {
+    padding: 12px;
+    position: sticky;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 5;
+    box-shadow: var(--ring-soft), 0 0 0 12px var(--surface-sunken);
+  }
   .settings-menu { min-width: 240px; }
   .menu-item { padding: 12px 8px; font-size: 0.95rem; }
 

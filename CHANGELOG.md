@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- **+ Add app stays in reach on a phone.** It's pinned to the bottom of the
+  app list instead of sitting below the last app, so it no longer scrolls off
+  screen once you have a few apps.
+
 ## v0.13.5
 - **The Rack Suite design system.** Rack, MC Hoster and Shelf now share one
   set of blue/grey neutrals, shapes and soft buttons; each app has its own
