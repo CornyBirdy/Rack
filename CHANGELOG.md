@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Unfolded phones and tablets:** the page is sized to the visible screen, so
+  **+ Add app** (and the bottom of the app list) is no longer hidden behind the
+  browser's address bar.
+- **Opening ⚙ checks for updates** unless it checked in the last few seconds
+  (it used to wait five minutes, which hid an update that had just landed).
 - **Switching on an app's autostart (or renaming it) no longer stops it.** Saving
   the Edit dialog restarted a running app every time; it now only stops one
   when its processes were actually changed.
