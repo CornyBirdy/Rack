@@ -1303,10 +1303,26 @@ const server = http.createServer(async (req, res) => {
         rebuilt.forEach((c, i) => {
           if (app.commands[i] && app.commands[i].cloudflare) c.cloudflare = app.commands[i].cloudflare;
         });
-        // stop anything running before we change the process list out from under it
-        stopApp(app);
-        app.commands = rebuilt;
-        runtime.delete(app.id);
+        // The editor always sends the whole list, so saving just a name or the
+        // autostart switch arrives here too: leave a running app alone then.
+        const same =
+          rebuilt.length === app.commands.length &&
+          rebuilt.every((c, i) => {
+            const old = app.commands[i];
+            // args compare as the editor shows them (joined), so one containing a space still matches
+            return (
+              c.args.join(" ") === old.args.join(" ") &&
+              ["name", "exe", "dir", "port", "managePort", "raw", "stopCommand"].every(
+                (k) => JSON.stringify(c[k]) === JSON.stringify(old[k])
+              )
+            );
+          });
+        if (!same) {
+          // stop anything running before we change the process list out from under it
+          stopApp(app);
+          app.commands = rebuilt;
+          runtime.delete(app.id);
+        }
       }
       const portInfo = resolvePorts();
       broadcast({ type: "apps" });
