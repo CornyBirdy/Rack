@@ -1,0 +1,29 @@
+/* Rack Glass layer: ground, frosted sidebar / top bar / cards, pill buttons. Colours, radii and blur come from tokens.css. */
+body { background: var(--ground-base); }
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--ground-mesh); pointer-events: none; }
+
+.sidebar {
+  background: var(--glass); border-right: 1px solid var(--edge);
+  backdrop-filter: blur(var(--blur)) saturate(1.4); -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4);
+}
+.topbar {
+  background: var(--float); border-bottom: 1px solid var(--hair);
+  backdrop-filter: blur(var(--blur)) saturate(1.4); -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4);
+}
+.card {
+  background: var(--card); border-color: var(--edge); border-radius: var(--r-lg); box-shadow: var(--shadow-card);
+  backdrop-filter: blur(var(--blur)) saturate(1.4); -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4);
+}
+.menu-item { border-radius: var(--r-sm); }
+
+/* buttons are pills; the one main action (Run / Start) uses the accent gradient */
+.btn { border-radius: var(--r-pill); background: var(--field); transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.btn:not(:disabled):hover { background: var(--card); transform: translateY(-1px); }
+.btn-run { background: var(--accent-fill); box-shadow: var(--glow); color: var(--on-accent); }
+.btn-run:not(:disabled):hover { background: var(--accent-fill); filter: brightness(1.07); }
+.btn-kill:not(:disabled):hover, .btn-danger-ghost:not(:disabled):hover { transform: none; }
+
+/* dialogs are never see-through */
+.modal-backdrop { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.modal { background: var(--solid); border-color: var(--edge); border-radius: var(--r-xl); box-shadow: var(--shadow-pop); }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:not(:disabled):hover { transform: none; } }

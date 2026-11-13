@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **New look: Rack Glass.** Rack now sits on a soft coral colour background with a frosted sidebar, top bar and
+  cards, much rounder corners and pill-shaped buttons. The Run button uses a very light coral gradient. Text is now
+  Plus Jakarta Sans (consoles and ports stay in a code font), and both fonts are bundled so Rack needs no internet to
+  look right. Light and dark match, and the dialogs stay solid so they are always easy to read.
 - **⟳ Update runs an app's setup for you.** If the app's `rack.json` has a
   `setup` step, it now runs after an update that brings new code (before the
   rebuild), so there's no running `setup.bat` by hand after code changes. If
