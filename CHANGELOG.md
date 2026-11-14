@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Rack looks different.** The Overview now opens on a big "Apps running" number with a chip for each running app
+  (and a warning chip when the disk is nearly full). The CPU, memory, disk and uptime tiles use big, light numbers.
+  Corners are softer everywhere: cards are less round, buttons are rounded rectangles instead of pills, and chips are
+  small rounded tags. Everything works the same as before.
 - **New look: Rack Glass.** Rack now sits on a soft coral colour background with a frosted sidebar, top bar and
   cards, much rounder corners and pill-shaped buttons. The Run button uses a very light coral gradient. Text is now
   Plus Jakarta Sans (consoles and ports stay in a code font), and both fonts are bundled so Rack needs no internet to

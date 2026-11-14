@@ -75,6 +75,11 @@
 
       <!-- machine + every app's CPU and memory -->
       <div id="overview" class="panel overview" hidden>
+        <section class="card ov-hero" id="ov-hero" aria-label="Apps running">
+          <span class="stat-label">Apps running</span>
+          <div class="hero-big"><b id="ov-running">–</b><small id="ov-total"></small></div>
+          <div id="ov-chips" class="hero-chips"></div>
+        </section>
         <section class="status-row">
           <div class="stat stat-chart" id="sys-cpu">
             <span class="stat-label">CPU <span class="stat-note"></span></span>

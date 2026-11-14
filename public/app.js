@@ -1832,6 +1832,19 @@ function renderOverview() {
   }
   document.querySelectorAll(".ov-sort button").forEach((b) => b.classList.toggle("on", b.dataset.sort === ovSort));
 
+  // Hero: how many apps are running, and anything that needs a look.
+  {
+    const eh = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const run = appsList.filter((x) => x.running), n = appsList.length;
+    $("ov-running").textContent = run.length;
+    $("ov-total").textContent = `of ${n} app${n === 1 ? "" : "s"}`;
+    const chips = run.map((x) => `<span class="hero-chip ok"><span class="dot"></span>${eh(x.name)}</span>`);
+    if (n - run.length) chips.push(`<span class="hero-chip">${n - run.length} stopped</span>`);
+    const dk = sys && sys.disk;
+    if (dk) { const used = (100 * (dk.total - dk.free)) / dk.total; if (used >= 85) chips.push(`<span class="hero-chip warn">Disk ${Math.round(used)}% full</span>`); }
+    $("ov-chips").innerHTML = chips.join("");
+  }
+
   // Running apps first, then the chosen order; stopped ones keep sidebar order.
   const usage = (a) => (a.running && stats.apps[a.id]) || null;
   const key = (a) => {

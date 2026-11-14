@@ -17,7 +17,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: 
 .menu-item { border-radius: var(--r-sm); }
 
 /* buttons are pills; the one main action (Run / Start) uses the accent gradient */
-.btn { border-radius: var(--r-pill); background: var(--field); transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.btn { border-radius: var(--r-btn); background: var(--field); transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
 .btn:not(:disabled):hover { background: var(--card); transform: translateY(-1px); }
 .btn-run { background: var(--accent-fill); box-shadow: var(--glow); color: var(--on-accent); }
 .btn-run:not(:disabled):hover { background: var(--accent-fill); filter: brightness(1.07); }
@@ -27,3 +27,26 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: 
 .modal-backdrop { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .modal { background: var(--solid); border-color: var(--edge); border-radius: var(--r-xl); box-shadow: var(--shadow-pop); }
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:not(:disabled):hover { transform: none; } }
+
+/* ================= Redesign: overview hero, stat tiles, app rows ================= */
+.ov-hero {
+  position: relative; overflow: hidden; border-radius: var(--r-xl); padding: 22px 26px;
+  border-color: color-mix(in oklch, var(--a) 30%, var(--edge));
+  background: radial-gradient(90% 130% at 100% 0%, color-mix(in oklch, var(--a) 28%, transparent), transparent 62%), linear-gradient(150deg, color-mix(in oklch, var(--a) 12%, var(--card)), var(--card));
+  box-shadow: var(--shadow-window);
+}
+.hero-big { font: 300 64px/1 var(--font); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; margin: 8px 0 14px; }
+.hero-big b { font-weight: 300; }
+.hero-big small { font-size: 18px; color: var(--ink-muted); margin-left: 8px; font-weight: 400; letter-spacing: 0; }
+.hero-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: var(--r-sm); background: var(--field); border: 1px solid var(--hair); font-size: 0.82rem; font-weight: 600; }
+.hero-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+.hero-chip.warn { background: color-mix(in oklch, var(--warn) 24%, transparent); color: var(--warn-ink); border-color: transparent; }
+.stat { background: var(--card); border-color: var(--edge); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 16px 20px; gap: 4px;
+  backdrop-filter: blur(var(--blur)) saturate(1.4); -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4); }
+.stat-label { text-transform: none; letter-spacing: 0; font-size: 0.8rem; font-weight: 500; }
+.overview .stat-value { font-size: 1.9rem; font-weight: 300; letter-spacing: -0.03em; text-transform: none; font-variant-numeric: tabular-nums; }
+.ov-apps { padding: 12px 16px; }
+.ov-row { border-radius: var(--r-md); }
+.ov-row:hover { background: var(--field); }
+.meter, .meter-fill { border-radius: var(--r-xs); }
