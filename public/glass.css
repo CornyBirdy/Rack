@@ -76,3 +76,17 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: 
 :root { --spring: cubic-bezier(0.2, 0.7, 0.2, 1); } /* one easing curve: nothing overshoots */
 *, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 .ov-row:hover { transform: none; } .menu-item:active, .btn:not(:disabled):active { transform: none; }
+
+/* ================= Flatkey look: near-black ground, sheened surfaces with no outlines, light type, pill controls ================= */
+:root { --sheen: linear-gradient(180deg, color-mix(in oklch, var(--ink) 4%, var(--card)), var(--card)); }
+body { font-feature-settings: "tnum" 1, "cv11" 1; }
+.card, .stat, .ov-hero, .ov-apps { background: var(--sheen); border-color: transparent; box-shadow: var(--shadow-card); }
+.btn, .sidebar, .topbar { border-color: transparent; }
+input, select, textarea { background: var(--sunken); border-color: transparent; border-radius: var(--r-md); }
+.hero-chip { border-radius: 999px; border-color: transparent; }
+.sidebar, .topbar { border-color: transparent; }
+.ov-hero { padding: 24px 28px; }
+.hero-big, .hero-big b { font-weight: 300; }
+.menu-item.active, .menu-item[aria-current="true"] { background: var(--field); }
+.app-item { border-color: transparent; } .app-item.selected { background: var(--field); border-color: transparent; }
+.sidebar input { border-color: transparent; }

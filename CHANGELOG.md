@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **A new look, modelled on a fleet-dashboard design.** Near-black surfaces with a soft sheen, no outlines (shapes are told apart by fills), much bigger corners, light-weight Inter type with big thin numbers, and pill-shaped switches and tabs where the chosen item is a lighter pill. Layout and what each button does are unchanged.
 - **A flatter, quieter look.** The frosted glass, colour glows and gradients are gone. Surfaces are plain neutral greys (dark) or soft whites (light) in steps with thin outlines, the accent colour is used only for the main action and the current selection, buttons are a solid accent, and nothing bounces or lifts on hover any more. Layout, text and what each button does are unchanged.
 - **Smoother, more specific animations.** Going into an app slides the page in from the right, going back to the
   Overview slides it in from the left, and switching from one app to another swaps with a small rise. The cards and
