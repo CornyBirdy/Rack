@@ -18,7 +18,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: 
 
 /* buttons are pills; the one main action (Run / Start) uses the accent gradient */
 .btn { border-radius: var(--r-btn); background: var(--field); transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
-.btn:not(:disabled):hover { background: var(--card); transform: translateY(-1px); }
+.btn:not(:disabled):hover { background: var(--card); }
 .btn-run { background: var(--accent-fill); box-shadow: var(--glow); color: var(--on-accent); }
 .btn-run:not(:disabled):hover { background: var(--accent-fill); filter: brightness(1.07); }
 .btn-kill:not(:disabled):hover, .btn-danger-ghost:not(:disabled):hover { transform: none; }
@@ -31,8 +31,8 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: 
 /* ================= Redesign: overview hero, stat tiles, app rows ================= */
 .ov-hero {
   position: relative; overflow: hidden; border-radius: var(--r-xl); padding: 22px 26px;
-  border-color: color-mix(in oklch, var(--a) 30%, var(--edge));
-  background: radial-gradient(90% 130% at 100% 0%, color-mix(in oklch, var(--a) 28%, transparent), transparent 62%), linear-gradient(150deg, color-mix(in oklch, var(--a) 12%, var(--card)), var(--card));
+  border-color: var(--edge);
+  background: var(--card);
   box-shadow: var(--shadow-window);
 }
 .hero-big { font: 300 64px/1 var(--font); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; margin: 8px 0 14px; }
@@ -68,6 +68,11 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: 
 .btn { transition: background var(--dur-1) var(--ease), transform .15s var(--spring), box-shadow .2s; }
 .btn:not(:disabled):active { transform: scale(.95); }
 .menu-item { transition: background .15s, transform .15s var(--spring); } .menu-item:active { transform: scale(.97); }
-.ov-row { transition: background .15s, transform .2s var(--spring); } .ov-row:hover { transform: translateX(3px); }
+.ov-row { transition: background .15s, transform .2s var(--spring); } .ov-row:hover { }
 .modal-backdrop:not([hidden]) > .modal { animation: pop .38s var(--spring); }
 @media (prefers-reduced-motion: reduce) { .panel.page-fwd, .panel.page-back, .panel.page-swap, .hero-chip, .panel [class*="page-"] .stat, .panel [class*="page-"] .card { animation: none !important; } .ov-row:hover { transform: none; } }
+
+/* ================= Flat: quiet chrome, one accent, no glass, glows or colour washes (unslop method) ================= */
+:root { --spring: cubic-bezier(0.2, 0.7, 0.2, 1); } /* one easing curve: nothing overshoots */
+*, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.ov-row:hover { transform: none; } .menu-item:active, .btn:not(:disabled):active { transform: none; }
