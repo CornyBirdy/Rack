@@ -8,13 +8,21 @@ const $ = (id) => document.getElementById(id);
 const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // Restarts the entrance animation `cls` on node.
+// Numbers count up to their value instead of jumping.
+function countTo(el, to) {
+  const from = Number(el.dataset.v || 0); el.dataset.v = to;
+  if (from === to || lessMotion()) { el.textContent = to; return; }
+  const t0 = performance.now(), dur = 600;
+  const step = (t) => { const p = Math.min(1, (t - t0) / dur); el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
 function playIn(node, cls = "page-in") {
   if (!node || lessMotion()) return;
   clearTimeout(node.playTimer);
   node.classList.remove(cls);
   void node.offsetWidth; // so re-adding the class starts the animation over
   node.classList.add(cls);
-  node.playTimer = setTimeout(() => node.classList.remove(cls), 400);
+  node.playTimer = setTimeout(() => node.classList.remove(cls), 600);
 }
 
 // Dialogs and the settings menu fade out instead of vanishing: hiding one
@@ -786,7 +794,7 @@ $("filter-clear").onclick = () => {
 };
 
 function selectApp(id) {
-  const changed = (id || null) !== selectedId;
+  const changed = (id || null) !== selectedId, prevSel = selectedId;
   selectedId = id || null;
   try {
     if (selectedId) localStorage.setItem("selected", selectedId);
@@ -798,7 +806,8 @@ function selectApp(id) {
   renderStats();
   loadLogs();
   showMain(true);
-  if (changed) playIn(selectedId ? $("panel") : $("overview"));
+  // the page slides the way you're going: into an app from the right, back to the overview from the left, app to app with a swap
+  if (changed) playIn(selectedId ? $("panel") : $("overview"), !selectedId ? "page-back" : prevSel ? "page-swap" : "page-fwd");
 }
 $("overview-btn").onclick = () => selectApp(null);
 
@@ -1836,13 +1845,13 @@ function renderOverview() {
   {
     const eh = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const run = appsList.filter((x) => x.running), n = appsList.length;
-    $("ov-running").textContent = run.length;
+    countTo($("ov-running"), run.length);
     $("ov-total").textContent = `of ${n} app${n === 1 ? "" : "s"}`;
     const chips = run.map((x) => `<span class="hero-chip ok"><span class="dot"></span>${eh(x.name)}</span>`);
     if (n - run.length) chips.push(`<span class="hero-chip">${n - run.length} stopped</span>`);
     const dk = sys && sys.disk;
     if (dk) { const used = (100 * (dk.total - dk.free)) / dk.total; if (used >= 85) chips.push(`<span class="hero-chip warn">Disk ${Math.round(used)}% full</span>`); }
-    $("ov-chips").innerHTML = chips.join("");
+    const sig = chips.join(""); if ($("ov-chips").dataset.sig !== sig) { $("ov-chips").dataset.sig = sig; $("ov-chips").innerHTML = sig; }
   }
 
   // Running apps first, then the chosen order; stopped ones keep sidebar order.

@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Smoother, more specific animations.** Going into an app slides the page in from the right, going back to the
+  Overview slides it in from the left, and switching from one app to another swaps with a small rise. The cards and
+  stat tiles arrive one after another, the big "Apps running" number counts up, the app chips pop in, and buttons
+  spring when pressed. Everything is off if your device asks for reduced motion.
 - **Rack looks different.** The Overview now opens on a big "Apps running" number with a chip for each running app
   (and a warning chip when the disk is nearly full). The CPU, memory, disk and uptime tiles use big, light numbers.
   Corners are softer everywhere: cards are less round, buttons are rounded rectangles instead of pills, and chips are
