@@ -793,8 +793,35 @@ $("filter-clear").onclick = () => {
   filterInput.focus();
 };
 
+/* ------------------------------------------------------------- carousel slide */
+// The old view is kept as a ghost that leaves while the new view arrives beside it, both at the same speed.
+const SLIDE_MS = 440, SLIDE_EASE = "cubic-bezier(0.32, 0.72, 0, 1)", SLIDE_GAP = 16;
+function ghostOf(view, clipEl) {
+  const r = view.getBoundingClientRect(), c = clipEl.getBoundingClientRect();
+  const g = document.createElement("div"); g.className = "ghost"; g.setAttribute("aria-hidden", "true");
+  Object.assign(g.style, { left: c.left + "px", top: r.top + "px", width: c.width + "px", height: r.height + "px" });
+  const gin = document.createElement("div"); gin.className = "gin";
+  Object.assign(gin.style, { marginLeft: r.left - c.left + "px", width: r.width + "px", height: r.height + "px" });
+  const clone = view.cloneNode(true);
+  clone.removeAttribute("hidden"); clone.classList.remove("page-fwd", "page-back", "page-swap"); clone.style.height = "100%";
+  clone.querySelectorAll("[id]").forEach((e) => e.removeAttribute("id"));
+  gin.appendChild(clone); g.appendChild(gin); document.body.appendChild(g);
+  clone.scrollTop = view.scrollTop;
+  setTimeout(() => g.remove(), SLIDE_MS + 400);
+  return { g, w: c.width };
+}
+function slideViews(ghost, view, dir) {
+  const d = ghost.w + SLIDE_GAP;
+  const a = ghost.g.firstChild.animate([{ transform: "none" }, { transform: `translateX(${-dir * d}px)` }], { duration: SLIDE_MS, easing: SLIDE_EASE, fill: "forwards" });
+  a.onfinish = a.oncancel = () => ghost.g.remove();
+  view.animate([{ transform: `translateX(${dir * d}px)` }, { transform: "none" }], { duration: SLIDE_MS, easing: SLIDE_EASE, fill: "backwards" });
+}
+
 function selectApp(id) {
   const changed = (id || null) !== selectedId, prevSel = selectedId;
+  const oldView = [$("panel"), $("overview")].find((e) => e && !e.hidden);
+  const wide = !matchMedia("(max-width: 760px)").matches;
+  const ghost = changed && oldView && wide && !lessMotion() ? ghostOf(oldView, document.querySelector(".main")) : null;
   selectedId = id || null;
   try {
     if (selectedId) localStorage.setItem("selected", selectedId);
@@ -807,7 +834,12 @@ function selectApp(id) {
   loadLogs();
   showMain(true);
   // the page slides the way you're going: into an app from the right, back to the overview from the left, app to app with a swap
-  if (changed) playIn(selectedId ? $("panel") : $("overview"), !selectedId ? "page-back" : prevSel ? "page-swap" : "page-fwd");
+  if (changed) {
+    const nv = selectedId ? $("panel") : $("overview"), idx = (x) => appsList.findIndex((a) => a.id === x);
+    const dir = !selectedId ? -1 : prevSel ? (idx(selectedId) > idx(prevSel) ? 1 : -1) : 1;
+    if (ghost) slideViews(ghost, nv, dir);
+    else playIn(nv, !selectedId ? "page-back" : prevSel ? "page-swap" : "page-fwd");
+  }
 }
 $("overview-btn").onclick = () => selectApp(null);
 
@@ -1852,6 +1884,10 @@ function renderOverview() {
     const dk = sys && sys.disk;
     if (dk) { const used = (100 * (dk.total - dk.free)) / dk.total; if (used >= 85) chips.push(`<span class="hero-chip warn">Disk ${Math.round(used)}% full</span>`); }
     const sig = chips.join(""); if ($("ov-chips").dataset.sig !== sig) { $("ov-chips").dataset.sig = sig; $("ov-chips").innerHTML = sig; }
+    // one column of dots per app: lit up to its share of CPU, relative to the busiest app; stopped apps stay dark
+    const shown = appsList.slice(0, 12), cpu = shown.map((x) => (x.running && stats.apps[x.id] && stats.apps[x.id].cpu) || 0), mx = Math.max(...cpu, 0.0001);
+    const dm = shown.length ? `<div class="dm" role="img" aria-label="CPU use of each app, busiest tallest"><div class="dcs">${shown.map((x, i) => { const lit = x.running ? Math.max(1, Math.round((cpu[i] / mx) * 7)) : 0; return `<div class="dc ${x.running ? "run" : ""}">${Array.from({ length: 7 }, (_, r) => `<i${7 - r <= lit ? ' class="on"' : ""}></i>`).join("")}</div>`; }).join("")}</div><span>CPU by app</span></div>` : "";
+    if ($("ov-dm").dataset.sig !== dm) { $("ov-dm").dataset.sig = dm; $("ov-dm").innerHTML = dm; }
   }
 
   // Running apps first, then the chosen order; stopped ones keep sidebar order.

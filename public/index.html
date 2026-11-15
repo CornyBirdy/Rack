@@ -75,10 +75,15 @@
 
       <!-- machine + every app's CPU and memory -->
       <div id="overview" class="panel overview" hidden>
+        <section class="panel2">
+        <div class="phead"><h2>Overview</h2></div>
         <section class="card ov-hero" id="ov-hero" aria-label="Apps running">
-          <span class="stat-label">Apps running</span>
-          <div class="hero-big"><b id="ov-running">–</b><small id="ov-total"></small></div>
-          <div id="ov-chips" class="hero-chips"></div>
+          <div class="ov-left">
+            <span class="stat-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>Apps running</span>
+            <div class="hero-big"><b id="ov-running">–</b><small id="ov-total"></small></div>
+            <div id="ov-chips" class="hero-chips"></div>
+          </div>
+          <div id="ov-dm" class="dmwrap"></div>
         </section>
         <section class="status-row">
           <div class="stat stat-chart" id="sys-cpu">
@@ -100,6 +105,7 @@
             <span class="stat-label">Machine up <span class="stat-note"></span></span>
             <span class="stat-value">—</span>
           </div>
+        </section>
         </section>
         <section class="card ov-apps">
           <div class="ov-head">

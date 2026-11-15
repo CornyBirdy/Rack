@@ -96,3 +96,41 @@ input, select, textarea { background: var(--sunken); border-color: transparent; 
 .btn-run { background: linear-gradient(160deg, color-mix(in oklch, var(--a) 100%, white 16%), color-mix(in oklch, var(--a) 100%, black 14%)); box-shadow: inset 0 1px 0 oklch(1 0 0 / .38), inset 0 -1px 0 oklch(0 0 0 / .14), 0 8px 18px -10px color-mix(in oklch, var(--a) 70%, black); }
 .btn-ghost { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; filter: none; }
 .topbar { background: var(--g-fill), var(--g-bar); box-shadow: var(--g-edge), 0 14px 34px -14px var(--shadow-c); -webkit-backdrop-filter: blur(var(--blur-ctl)) saturate(1.5); backdrop-filter: blur(var(--blur-ctl)) saturate(1.5); }
+
+/* ================= Flatkey layout: Overview as one panel of stat cards, dot-matrix chart, carousel slide ================= */
+.main { overflow-x: clip; }
+.ghost { position: fixed; z-index: 4; pointer-events: none; overflow: clip; }
+.gin { will-change: transform; position: relative; }
+.panel2 { display: grid; gap: 10px; padding: 10px; border: 0; border-radius: var(--r-xl); background: linear-gradient(180deg, color-mix(in oklch, var(--ink) 3%, var(--glass)), var(--glass)); box-shadow: var(--shadow-window); flex: none; }
+.phead { padding: 12px 12px 2px; } .phead h2 { margin: 0; font: 300 26px/1.1 var(--font); letter-spacing: -0.02em; }
+.panel2 .ov-hero, .panel2 .stat { background: var(--sheen); border-color: transparent; border-radius: calc(var(--r-xl) - 8px); box-shadow: var(--shadow-card); }
+.panel2 .ov-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 18px 20px 20px; }
+.ov-left { min-width: 0; display: grid; gap: 14px; }
+.panel2 .stat-label { display: flex; align-items: center; gap: 10px; font: 400 15px var(--font); color: var(--ink-muted); text-transform: none; letter-spacing: 0; }
+.panel2 .stat-label svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.panel2 .hero-big { font: 300 56px/1 var(--font); margin: 0; letter-spacing: -0.035em; } .panel2 .hero-big small { font-size: 20px; letter-spacing: 0; margin-left: 10px; }
+.panel2 .status-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.panel2 .stat { padding: 16px 20px 18px; gap: 6px; }
+.panel2 .stat .stat-value { font: 300 38px/1.1 var(--font); letter-spacing: -0.03em; text-transform: none; }
+.panel2 .stat-note { font-size: 14px; color: var(--ink-muted); }
+.hero-chip { border: 0; border-radius: 999px; }
+
+/* dot-matrix chart */
+.dmwrap:empty { display: none; }
+.dm { display: grid; gap: 10px; justify-items: end; flex: none; }
+.dcs { display: flex; gap: 4px; }
+.dc { display: flex; flex-direction: column; gap: 4px; }
+.dc i { width: 6px; height: 6px; border-radius: 50%; background: color-mix(in oklch, var(--ink) 12%, transparent); transition: background .3s var(--ease); }
+.dc.run i.on { background: var(--a); }
+.dm span { font: 600 11px var(--font); color: var(--ink-muted); }
+@media (max-width: 420px) { .dcs .dc:nth-child(n+9) { display: none; } .panel2 .hero-big { font-size: 46px; } }
+
+/* apps list: soft rows, a pill switch for the sort */
+.ov-sort { background: var(--sunken); border-radius: 999px; padding: 4px; gap: 2px; box-shadow: inset 0 1px 3px oklch(0 0 0 / .28); }
+.ov-sort button { border-radius: 999px; background: transparent; border-color: transparent; box-shadow: none; color: var(--ink-muted); }
+.ov-sort button:hover { background: transparent; color: var(--ink); }
+.ov-sort button.on { background: var(--field); color: var(--ink); box-shadow: inset 0 1px 0 oklch(1 0 0 / .07), 0 1px 3px oklch(0 0 0 / .35); }
+.ov-row { border-bottom: 0; border-radius: var(--r-md); padding: 12px 10px; }
+.ov-row:hover { background: var(--field); }
+.panel2 .status-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.dm span { white-space: nowrap; }
